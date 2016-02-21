@@ -1,0 +1,26 @@
+{
+    "name": "threadjs-lib",
+    "version": "0.0.77",
+    "description": "thread",
+    "main": "index.js",
+    "scripts": {
+        "test": "node test/",
+        "install": "node-gyp rebuild"
+    },
+    "repository": {
+        "type": "git",
+        "url": "none"
+    },
+    "author": "yanming",
+    "license": "ISC",
+    "engines": {
+        "node": [
+            "~0.12",
+            "~0.13",
+            "5"
+        ]
+    },
+    "dependencies": {
+        "bindings": "^1.2.1"
+    }
+}

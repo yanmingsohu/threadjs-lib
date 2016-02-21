@@ -1,0 +1,300 @@
+﻿#ifndef THREAD_TOOLS_H
+#define THREAD_TOOLS_H
+
+
+#include <node.h>
+#include <v8.h>
+#include <uv.h>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <set>
+
+using namespace v8;
+using namespace node;
+using namespace std;
+
+struct RecvEventData;
+
+
+#define DEL_UV_HANDLE_RECV_EVENT(h) \
+  if (h) { \
+    if (h->data) { \
+      RecvEventData* red = (RecvEventData*) h->data; \
+      delete red; \
+      h->data = 0; \
+    } \
+    uv_close((uv_handle_t*) h, when_handle_closed_cb); \
+    h = 0; \
+  }
+
+#define DEL_UV_ASYNC(h) \
+  if (h) { \
+    uv_close((uv_handle_t*) h, when_handle_closed_cb); \
+    h = 0; \
+  }
+
+#define DEL_ARRAY(h) \
+  if (h) { \
+    delete [] h; \
+    h = 0; \
+  }
+
+#define DEL_LOOP(h) \
+  if (h) { \
+    uv_stop(h); \
+    uv_loop_close(h); \
+    delete h; \
+    h = 0; \
+  }
+
+
+// FCI: FunctionCallbackInfo
+#define INIT_ISOLATE_FCI(iso, fci) \
+  Isolate *iso = fci.GetIsolate(); \
+  HandleScope scope(iso);
+
+
+#define RET_OBJ_FUNCTION_INIT(iso, args, thiz) \
+  INIT_ISOLATE_FCI(iso, args); \
+  Local<Object> thiz = args.This(); \
+  if (id_pool.notfree(iso, thiz)) \
+
+
+// FCI: FunctionCallbackInfo
+#define GET_FCI_EXTERNAL_ATTR(fci, tmp, TYPE, pvar) \
+  Local<External> tmp = fci.Data().As<External>(); \
+  TYPE *pvar = (TYPE*) tmp->Value() \
+
+
+#define SET_BOOL_ATTR(iso, obj, attr, val) \
+  obj->Set(String::NewFromUtf8(iso, attr), Boolean::New(iso, val))
+
+
+#define GET_BOOL_ATTR(iso, obj, attr) \
+  obj->Get(String::NewFromUtf8(iso, attr))->IsFalse()
+
+
+#define CHECK_TYPE(type, iso, object, errmsg) \
+{ \
+  if (!object->Is##type ()) { \
+    Local<String> err = String::NewFromUtf8(iso, errmsg); \
+    iso->ThrowException(err); \
+    return; \
+  } \
+}
+
+
+#define CHECK_NULL(iso, object, errmsg) \
+{ \
+  if (object->IsNull() || object->IsUndefined()) { \
+    Local<String> err = String::NewFromUtf8(iso, errmsg); \
+    iso->ThrowException(err); \
+    return; \
+  } \
+}
+
+
+#define THROW_EXP(iso, errmsg) \
+{ \
+  Local<String> err = String::NewFromUtf8(iso, errmsg); \
+  iso->ThrowException(err); \
+}
+
+
+#define CACHE_V8_ERR_SEND_EVNET(iso, target, jtry, error_type) \
+  if (jtry.HasCaught()) { \
+    String::Utf8Value exception(jtry.Exception()); \
+    Local<Message> msg = jtry.Message(); \
+    String::Utf8Value line(msg->GetSourceLine()); \
+    Json jroot; \
+    jroot.set("name", "error"); \
+    Json jdata = jroot.childen("data"); \
+    jdata.set("name",      error_type); \
+    jdata.set("message",   *exception); \
+    jdata.set("linenum",   msg->GetLineNumber()); \
+    jdata.set("columnnum", msg->GetStartColumn()); \
+    jdata.set("jscode",    *line); \
+    jdata.end(); \
+    jroot.end(); \
+    RecvEventData::sendEvent(target, jroot); \
+  }
+
+
+template<class T, class LEN>
+inline void v8val_to_char(const Local<T> &v8s, char *&ch, LEN &chlen) {
+  if (!v8s->IsString()) return;
+
+  Local<String> str = Local<String>::Cast(v8s);
+  int len = str->Utf8Length() + 1;
+  char * code_s = new char[len];
+  str->WriteUtf8(code_s, len);
+  code_s[len-1] = 0;
+
+  ch = code_s;
+  chlen = len;
+}
+
+
+//
+// 调用第一个参数是字符串的函数
+//
+template<class T>
+void CALL_JS_OBJ_FN_STR1(Isolate* isolate, T& thiz, const char* name, const char* arg1) {
+  HandleScope handle_scope(isolate);
+  Local<Value> val = thiz->Get(String::NewFromUtf8(isolate, name));
+  CHECK_TYPE(Function, isolate, val, "must function");
+  Local<Function> func = val.As<Function>();
+  Local<Value> argv[] = { String::NewFromUtf8(isolate, arg1) };
+  func->Call(thiz, 1, argv);
+}
+
+
+//
+// 调用一个函数返回 bool, 无参数
+//
+template<class T>
+bool CALL_JS_OBJ_FN_RET_BOOL(Isolate* isolate, T& thiz, char* name) {
+  HandleScope handle_scope(isolate);
+  Local<Value> val = thiz->Get(String::NewFromUtf8(isolate, name));
+  // CHECK_TYPE(Function, isolate, val, "must function");
+  Local<Function> func = val.As<Function>();
+  Local<Value> ret = func->Call(thiz, 0, 0);
+  return ret->IsTrue() == true;
+}
+
+
+template <typename TypeName>
+inline void set_method( Isolate* isolate,
+                        TypeName& recv,
+                        char* name,
+                        FunctionCallback callback,
+                        void *data = 0) {
+  HandleScope handle_scope(isolate);
+  Local<External> fdata = External::New(isolate, data);
+  Local<FunctionTemplate> t = FunctionTemplate::New(isolate, callback, fdata);
+  Local<Function> fn = t->GetFunction();
+  Local<String> fn_name = String::NewFromUtf8(isolate, name);
+  fn->SetName(fn_name);
+  recv->Set(fn_name, fn);
+}
+
+
+template<class T>
+inline Persistent<T>* copy(Isolate* iso, Local<T> src) {
+  return new Persistent<T>(iso, src);
+}
+
+
+template<class T>
+inline Local<T> copy(Isolate *iso, Persistent<T> *src) {
+  return Local<T>::New(iso, *src);
+}
+
+
+void when_handle_closed_cb(uv_handle_t* handle);
+
+
+//
+// 必须按照 JSON 的生成顺序调用 api, 否则会生成无效的 JSON
+// 不要设置参数中有双引号 `"` 的字符串
+//
+class Json {
+  std::ostringstream *buf;
+  int attr_count;
+  bool isroot;
+
+  void init() {
+    *buf << "{";
+    attr_count = 0;
+  }
+
+  template<class K>
+  inline void write_key(K& k) {
+    if (attr_count > 0)
+      *buf << ',';
+    *buf << '"' << k << "\":";
+    ++attr_count;
+  }
+
+public:
+  Json() : isroot(true) {
+    buf = new std::ostringstream();
+    init();
+  }
+  Json(const Json &p) : buf(p.buf), attr_count(p.attr_count), isroot(false) {
+  }
+  ~Json() {
+    if (isroot)
+      delete buf;
+  }
+
+  // template<class DNOT_SET_JSON_OBJ>
+  // void set(DNOT_SET_JSON_OBJ k, Json obj);
+
+  template<class K>
+  Json childen(K& name) {
+    write_key(name);
+    Json j(*this);
+    j.init();
+    return j;
+  }
+
+  template<class K, class V>
+  void set(K k, V v) {
+    write_key(k);
+    *buf << '"' << v << '"';
+  }
+
+  // 闭合一个对象
+  void end() {
+    *buf << '}';
+  }
+
+  std::string str() {
+    return buf->str();
+  }
+};
+
+
+//
+// 函数范围内安全的指针, 函数返回, 指针被删除, 不可复制
+//
+template<class T>
+class LocalPoint {
+  T *point;
+public:
+  LocalPoint(T *p) : point(p) {}
+  ~LocalPoint() {
+    if (point) {
+      delete point;
+      point = 0;
+    }
+  }
+  T* operator->() {
+    return point;
+  }
+  T* get() {
+    return point;
+  }
+private:
+  LocalPoint(LocalPoint &a);
+  void operator=(LocalPoint &a);
+};
+
+
+class LockHandle {
+  uv_mutex_t &data;
+
+public:
+  LockHandle(uv_mutex_t &d) : data(d) {
+    uv_mutex_lock(&data);
+  }
+
+  ~LockHandle() {
+    uv_mutex_unlock(&data);
+  }
+};
+
+
+#endif
