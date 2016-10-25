@@ -119,6 +119,20 @@ struct RecvEventData;
     jroot.end(); \
     RecvEventData::sendEvent(target, jroot); \
   }
+  
+  
+#if NODE_MAJOR_VERSION == 0
+  #if NODE_MINOR_VERSION == 12 or NODE_MINOR_VERSION == 13
+    #define CREATE_ISOLATE(isolate) \
+      Isolate *isolate = Isolate::New()
+  #endif
+#elif NODE_MAJOR_VERSION == 6
+  #define CREATE_ISOLATE(isolate) \
+    ArrayBufferAllocator allo; \
+    Isolate::CreateParams parm; \
+    parm.array_buffer_allocator = &allo; \
+    Isolate * isolate = Isolate::New(parm)
+#endif
 
 
 template<class T, class LEN>
@@ -293,6 +307,25 @@ public:
 
   ~LockHandle() {
     uv_mutex_unlock(&data);
+  }
+};
+
+
+//
+// 性能并不高的内存分配器, 在新线程中调用
+//
+class ArrayBufferAllocator : public ArrayBuffer::Allocator {
+public:
+  void* Allocate(size_t length) {
+    return calloc(length, 1);
+  }
+
+  void* AllocateUninitialized(size_t length) { 
+    return malloc(length); 
+  }
+
+  void Free(void* data, size_t) { 
+    free(data); 
   }
 };
 

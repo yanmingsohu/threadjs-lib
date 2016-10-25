@@ -251,7 +251,7 @@ void JObject::set(Isolate *iso, const Local<Context> &context, const Local<Value
     } else {
       int64_t ik = k->IntegerValue();
       name[i] = new char[20];
-      sprintf(name[i], "%ld", ik);
+      sprintf(name[i], "%lld", ik);
     }
     value[i] = create_data_with_type(iso, context, v);
   }

@@ -2,15 +2,15 @@
 
 
 #if NODE_MAJOR_VERSION == 0
-	#if   NODE_MINOR_VERSION == 12
-		#include "main-v12.cc"
+	#if   NODE_MINOR_VERSION == 12 
+		#include "main-v0.12-vm6.cc"
 	#elif NODE_MINOR_VERSION == 13
-		#include "main-v12.cc"
+		#include "main-v0.12-vm6.cc"
 	#else
 		#define UNSUPPORT_FC_NATIVE
 	#endif
-#elif NODE_MAJOR_VERSION == 5
-	#define UNSUPPORT_FC_NATIVE
+#elif NODE_MAJOR_VERSION == 6
+	#include "main-v0.12-vm6.cc"
 #else
 	#define UNSUPPORT_FC_NATIVE
 #endif

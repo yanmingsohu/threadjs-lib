@@ -1,4 +1,4 @@
-﻿#include <node.h>
+#include <node.h>
 #include <v8.h>
 #include <v8-debug.h>
 #include <uv.h>
@@ -158,7 +158,7 @@ static void do_script(void *arg) {
   bool                  more;
 
   try {
-    Isolate *isolate = Isolate::New();
+    CREATE_ISOLATE(isolate);
     Isolate::Scope isolate_scope(isolate);
     //
     // Fatal error in heap setup
@@ -225,7 +225,7 @@ static void do_script(void *arg) {
       case 2:
         msg += "compiler js code fail."; break;
       default:
-        msg += "unknow"; break;
+        msg += "unknow code=" + code; break;
     }
 
     Json root;

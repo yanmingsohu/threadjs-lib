@@ -174,6 +174,7 @@ thread.namespace.getNextId('print current year chart', function(err, ret) {
 nodejs         v8
 ---------      -------------
 0.12.9         3.28.71.19
+6.9.1          5.1.281.84
 
 
 # 待实现
