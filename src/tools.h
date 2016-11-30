@@ -9,6 +9,7 @@
 #include <sstream>
 #include <string>
 #include <set>
+#include <cstdlib>
 
 using namespace v8;
 using namespace node;
@@ -119,8 +120,8 @@ struct RecvEventData;
     jroot.end(); \
     RecvEventData::sendEvent(target, jroot); \
   }
-  
-  
+
+
 #if NODE_MAJOR_VERSION == 0
   #if NODE_MINOR_VERSION == 12 or NODE_MINOR_VERSION == 13
     #define CREATE_ISOLATE(isolate) \
@@ -320,12 +321,12 @@ public:
     return calloc(length, 1);
   }
 
-  void* AllocateUninitialized(size_t length) { 
-    return malloc(length); 
+  void* AllocateUninitialized(size_t length) {
+    return malloc(length);
   }
 
-  void Free(void* data, size_t) { 
-    free(data); 
+  void Free(void* data, size_t) {
+    free(data);
   }
 };
 
