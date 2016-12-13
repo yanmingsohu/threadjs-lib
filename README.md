@@ -108,6 +108,11 @@ thread.off('message-name', Function);
 // 否则返回 true; 如果返回了 false 说明 wait 方法挂起失败.
 //
 thread.wait();
+
+//
+// 运行一段代码, this 不存在
+//
+thread.eval(code);
 ```
 
 

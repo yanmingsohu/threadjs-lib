@@ -1,6 +1,6 @@
 ﻿var fs = require('fs');
 var thlib = require('../');
-var fname = __dirname + '/thread1.js';
+var fname = __dirname + '/thread-mult.js';
 var code = fs.readFileSync(fname, 'utf8');
 var threadcount = 10;
 var messagecount = 3;

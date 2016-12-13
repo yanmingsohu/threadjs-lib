@@ -58,12 +58,17 @@ function one() {
   console.log(ret);
   console.log('\nJSON ++++++++++++');
   console.log(JSON.parse(JSON.stringify(data)));
+  
+  data.big = [];
+  for (var i=0; i<1000; ++i) {
+    data.big.push(i);
+  }
 }
 
 
 function mem() {
-  var c = 10000;
-  console.log('\n>> Test Native');
+  var c = 1000;
+  console.log('\n>> Test C++ Serialize');
   var start = Date.now();
   for (var i=0; i<c*5; ++i) {
     var ret = native.ser_test(data);

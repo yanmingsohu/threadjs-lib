@@ -3,9 +3,12 @@
 var thlib = require('../');
 console.log("V8:", thlib.v8version());
 
-require('./test2.js').do(function() {
-  require('./test3.js').do(function() {
-    require('./test1.js').do(function() {
+require('./event.js');
+require('./parse.js');
+
+require('./test-fn.js').do(function() {
+  require('./test-loop.js').do(function() {
+    require('./test-mult.js').do(function() {
       require('./test-http.js').do(function() {
         require('./testwait.js').do();
       });

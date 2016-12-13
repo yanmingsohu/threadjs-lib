@@ -2,7 +2,7 @@
 var thlib = require('../');
 var code = "return";
 
-var fname = __dirname + '/thread2.js';
+var fname = __dirname + '/thread-fn.js';
 var code2 = fs.readFileSync(fname, 'utf8');
 
 
@@ -15,7 +15,7 @@ module.exports.do = function(_over) {
     var c = call[i++];
     if (c) {
       var tid = setTimeout(function() {
-        console.log('\n!! Bad do', c.name, '(...)');
+        console.error('\n!! Bad do', c.name, '(...)');
         process.exit(1);
       }, 1500);
 
@@ -93,12 +93,12 @@ function testOffEvent2(next) {
   th.on('end', function() {
     clearTimeout(tid);
     if (!success) {
-      console.log('bad: has event listener but stopd');
+      console.error('bad: has event listener but stopd');
     }
   });
 
   th.on('error', function(e) {
-    console.log(e);
+    console.error(e);
   });
 
   th.send('remove_some', '!');

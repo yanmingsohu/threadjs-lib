@@ -1,6 +1,6 @@
 ﻿var fs = require('fs');
 var thlib = require('../');
-var fname = __dirname + '/thread3.js';
+var fname = __dirname + '/thread-loop.js';
 var code = fs.readFileSync(fname, 'utf8');
 
 
@@ -9,9 +9,9 @@ module.exports.do = function(_over) {
   console.log('\n============== Start: loop thread', th.threadId);
 
   th.on('error', function(e) {
-    console.log('error', e);
+    console.error('error', e);
   });
-  
+
   th.on('end', function() {
     console.log('success: loop thread stop');
     _over && _over();
