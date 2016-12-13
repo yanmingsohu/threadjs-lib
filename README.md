@@ -3,6 +3,10 @@
 
 `npm install threadjs-lib --save`
 
+* 在主线程/子线程之间进行数据通信
+* 轻量级的 v8 线程 (非 nodejs 线程)
+* 子线程的主动挂起来模拟同步操作
+
 
 ## 主线程中的 Api / Main thread Usage
 =====================================
@@ -40,11 +44,14 @@ handle.on('[message name]', function(data) {
 });
 
 //
-// 当主线程收到这个消息说明子线程已经挂起, 必须在主线程中调用 notify()
-// 子线程才能恢复运行.
+// 当主线程收到这个消息说明子线程已经挂起
 //
 handle.on('_thread_locked', function() {
-  handle.notify();
+  //
+  // 必须在接受到 _thread_locked 之后再合适的时候唤醒子线程, 否则子线程将无尽的等待
+  // notify 的参数是唤醒数据, 将被子线程 wait 方法返回, 一旦成功该方法返回 true
+  //
+  handle.notify({some-wakeup-data});
 });
 
 //
@@ -95,6 +102,12 @@ thread.send('message-name', data);
 // remove message listener
 //
 thread.off('message-name', Function);
+
+//
+// 挂起子线程, 直到被唤醒才返回, 如果 notify 设置了唤醒数据则返回数据
+// 否则返回 true; 如果返回了 false 说明 wait 方法挂起失败.
+//
+thread.wait();
 ```
 
 

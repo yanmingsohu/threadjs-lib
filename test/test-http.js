@@ -1,6 +1,6 @@
 ﻿var fs = require('fs');
 var thlib = require('../');
-var fname = __dirname + '/thread4.js';
+var fname = __dirname + '/thread-http.js';
 var code = fs.readFileSync(fname, 'utf8');
 
 
