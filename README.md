@@ -40,6 +40,14 @@ handle.on('[message name]', function(data) {
 });
 
 //
+// 当主线程收到这个消息说明子线程已经挂起, 必须在主线程中调用 notify()
+// 子线程才能恢复运行.
+//
+handle.on('_thread_locked', function() {
+  handle.notify();
+});
+
+//
 // 删除指定的监听器
 // remove message listener
 //

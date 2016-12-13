@@ -312,6 +312,71 @@ public:
 };
 
 
+class WaitThread {
+  uv_cond_t  cond;
+  uv_mutex_t mutex;
+  bool       locked;
+  char*      data;
+
+public:
+  WaitThread() : locked(0), data(0) {
+    if (uv_cond_init(&cond)) {
+      throw "uv_cond_init fail";
+    }
+    if (uv_mutex_init(&mutex)) {
+      throw "uv_muxtex_init fail";
+    }
+  }
+
+  ~WaitThread() {
+    if (data) {
+      delete [] data;
+      data = 0;
+    }
+    uv_cond_destroy(&cond);
+    uv_mutex_destroy(&mutex);
+  }
+
+  void lock() {
+    LockHandle lock(mutex);
+    if (locked)
+      throw "cannot lock twice";
+    locked = true;
+    uv_cond_wait(&cond, &mutex);
+  }
+
+  bool is_locked() {
+    return locked;
+  }
+
+  void unlock() {
+    LockHandle lock(mutex);
+    if (!locked)
+      throw "cannot unlock";
+    locked = false;
+    uv_cond_broadcast(&cond);
+  }
+
+  void setData(char * d) {
+    if (!locked)
+      throw "must locked";
+    if (data) {
+      delete [] data;
+    }
+    data = d;
+  }
+
+  // 返回的数据不再被内存管理
+  char* getData() {
+    if (locked)
+      throw "must unlock";
+    char * ret = data;
+    data = 0;
+    return ret;
+  }
+};
+
+
 //
 // 性能并不高的内存分配器, 在新线程中调用
 //

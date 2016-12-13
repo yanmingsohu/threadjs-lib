@@ -195,6 +195,8 @@ struct ReqData {
   uint64_t        begin_time;
   uint64_t        end_time;
 
+  WaitThread      wait;
+
 
   ReqData(Isolate *mi, uv_loop_t *muv, ID_container &pool) :
     main_iso(mi)   , main_loop(muv)  , main_event(0)  , del_event(0)  ,

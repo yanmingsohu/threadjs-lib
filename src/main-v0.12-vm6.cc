@@ -95,6 +95,57 @@ void j_use_time(const FunctionCallbackInfo<Value>& args) {
 
 
 //
+// 在子线程上绑定的方法.
+// 如果可以在线程上等待, 则立即停止线程, 并发送 `_thread_locked` 事件,
+// 主线程调用 j_notify 解锁, 线程解锁后该函数会返回 notify 中设置的参数, 或返回 true;
+// 否则线程没有等待过则返回 false
+//
+void j_wait(const FunctionCallbackInfo<Value>& args) {
+  RET_OBJ_FUNCTION_INIT(iso, args, thiz) {
+    GET_FCI_EXTERNAL_ATTR(args, edata, ReqData, req);
+    bool canwait = !req->wait.is_locked();
+    if (canwait) {
+      RecvEventData::sendEvent(
+        req->main_event, "{ \"name\": \"_thread_locked\" }");
+
+      req->wait.lock();
+
+      char * data = req->wait.getData();
+      if (data) {
+        Local<String> ret = String::NewFromUtf8(iso, data);
+        args.GetReturnValue().Set(ret);
+        delete [] data;
+        return;
+      }
+    }
+    args.GetReturnValue().Set(Boolean::New(iso, canwait));
+  }
+}
+
+
+//
+// 在主线程上绑定, 如果子线程被挂起, 这个方法将让子线程继续运行, 并返回 true,
+// 否则返回 false, 且什么都不做; 第一个参数是一个字符串, 用于从 wait 返回;
+//
+void j_notify(const FunctionCallbackInfo<Value>& args) {
+  RET_OBJ_FUNCTION_INIT(iso, args, thiz) {
+    GET_FCI_EXTERNAL_ATTR(args, edata, ReqData, req);
+    bool locked = req->wait.is_locked();
+    if (locked) {
+      if (args[0]->IsString()) {
+        int  len;
+        char *data;
+        v8val_to_char(args[0], data, len);
+        req->wait.setData(data);
+      }
+      req->wait.unlock();
+    }
+    args.GetReturnValue().Set(Boolean::New(iso, locked));
+  }
+}
+
+
+//
 // 互相绑定事件
 //
 static void bind_peer_event(ReqData *data) {
@@ -184,6 +235,7 @@ static void do_script(void *arg) {
     create_uv_async(isolate, j_context, loop, data->sub_event, "SUB");
     bind_peer_event(data.get());
     id_pool.setid(isolate, j_context, data.get());
+    set_method(isolate, j_context, "_wait", j_wait, data.get());
 
     {
       // TimeHandle local
@@ -255,36 +307,43 @@ void j_create(const FunctionCallbackInfo<Value>& args) {
   INIT_ISOLATE_FCI(iso, args);
   CHECK_TYPE(String, iso, args[0], "first arg must be string.");
 
-  uv_loop_t   *loop     = uv_default_loop();
-  uv_thread_t *req      = new uv_thread_t();
-  ReqData     *reqdata  = new ReqData(iso, loop, id_pool);
+  try {
+    uv_loop_t   *loop     = uv_default_loop();
+    uv_thread_t *req      = new uv_thread_t();
+    ReqData     *reqdata  = new ReqData(iso, loop, id_pool);
 
-  v8val_to_char(args[0], reqdata->code, reqdata->l_code);
-  v8val_to_char(args[1], reqdata->filename, reqdata->l_filename);
+    v8val_to_char(args[0], reqdata->code, reqdata->l_code);
+    v8val_to_char(args[1], reqdata->filename, reqdata->l_filename);
 
-  //
-  // 这是返回给 js 的对象, 用于操作底层方法, 将被另一个 jobject 包装
-  //
-  Local<Object> ret = Object::New(iso);
-  create_uv_async(iso, ret, loop, reqdata->main_event, "MAIN");
-  set_method(iso, ret, "_stop", j_stop, reqdata);
-  set_method(iso, ret, "_use_time", j_use_time, reqdata);
-  id_pool.newid(iso, ret, reqdata);
+    //
+    // 这是返回给 js 的对象, 用于操作底层方法, 将被另一个 jobject 包装
+    //
+    Local<Object> ret = Object::New(iso);
+    create_uv_async(iso, ret, loop, reqdata->main_event, "MAIN");
+    set_method(iso, ret, "_stop", j_stop, reqdata);
+    set_method(iso, ret, "_use_time", j_use_time, reqdata);
+    set_method(iso, ret, "_notify", j_notify, reqdata);
+    id_pool.newid(iso, ret, reqdata);
 
-  //
-  // 删除 uv_async_t(del_event, main_event) 必须在当前线程中做
-  //
-  uv_async_t* del_event = new uv_async_t();
-  del_event->data = reqdata->main_event;
-  reqdata->del_event = del_event;
-  uv_async_init(loop, del_event, recv_delete_event);
+    //
+    // 删除 uv_async_t(del_event, main_event) 必须在当前线程中做
+    //
+    uv_async_t* del_event = new uv_async_t();
+    del_event->data = reqdata->main_event;
+    reqdata->del_event = del_event;
+    uv_async_init(loop, del_event, recv_delete_event);
 
-  args.GetReturnValue().Set(ret);
+    args.GetReturnValue().Set(ret);
 
-  //
-  // 初始化工作在线程启动之前完成
-  //
-  uv_thread_create(req, do_script, reqdata);
+    //
+    // 初始化工作在线程启动之前完成
+    //
+    uv_thread_create(req, do_script, reqdata);
+  } catch(const char *e) {
+    THROW_EXP(iso, e);
+  } catch(...) {
+    THROW_EXP(iso, "unknow error");
+  }
 }
 
 
