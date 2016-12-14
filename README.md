@@ -6,6 +6,11 @@ Nodejs 多线程 / Nodejs Mulit Thread
 * 在主线程/子线程之间进行数据通信
 * 轻量级的 v8 线程 (非 nodejs 线程)
 * 子线程的主动挂起, 用来模拟同步操作
+* 当子线程不再监听事件, 子线程会退出
+* 主线程空闲且所有子线程都退出后, 主线程也会退出
+
+> `npm start` 会启动一个命令行模式的线程
+> 输入 js 代码可以立即在线程中运行查看结果
 
 
 主线程中的 Api / Main thread Usage
@@ -15,8 +20,24 @@ Nodejs 多线程 / Nodejs Mulit Thread
 
 
 ```js
-var deflibs =
 var thlib = require('threadjs-lib');
+
+//
+// 创建代码模板, 方便进行 js 代码的组装
+// code 中是 js 脚本, 并且有变量绑定 ${name}
+// name 变量必须在 config 中设置并被 config.name 的值替换
+//
+var tpl = thlib.code_template(code, config);
+
+//
+// 设置绑定变量的值
+//
+tpl.set(bind_name, value);
+
+//
+// 将代码模板使用变量绑定后返回最终代码, 字符串
+//
+tpl.code();
 
 //
 // 发送到线程的 js 代码
@@ -26,6 +47,7 @@ var code = "1+1";
 
 //
 // 子线程可调用库, default_lib 中有很多常用库的导出
+// console 也包含在其中
 //
 var thread_lib = thlib.default_lib;
 
@@ -110,9 +132,23 @@ thread.off('message-name', Function);
 thread.wait();
 
 //
-// 运行一段代码, this 不存在
+// 运行一段代码并返回, this 为当前全局上下文
 //
-thread.eval(code);
+eval(code);
+
+//
+// 事件, 与 nodejs 定义相同
+//
+new EventEmitter();
+
+//
+// 其他全局对象
+//
+Math, Number, String, parseInt, parseFloat, Array,
+Boolean, Date, RegExp, Function, Error,
+Int8Array, Uint8Array, Uint8ClampedArray, Int16Array,
+Uint16Array, Int32Array, Uint32Array, Float32Array,
+Float64Array, Int8Array,
 ```
 
 
@@ -158,6 +194,7 @@ var thread_lib = {
       ret  : true,  // 是否需要回调, 如果需要必须设置为 true
       argc : -1,    // 参数数量 -1 动态参数, 0 无参数, >0 固定参数
       fn   : _fn,   // 实现函数
+      mult : false, // 返回回调会调用多次, 需要实现函数解绑定
     }
   }
 };
@@ -165,8 +202,9 @@ var thread_lib = {
 //
 // 实现函数的签名, args 是调用时的参数, next 是结束后的回调
 // next : Function(err, data)
+// unbind : Function() 调用后解除消息绑定
 //
-function _fn(args, next) {
+function _fn(args, next, unbind) {
   // 当前线程上下文, 可以与调用此函数的子线程通讯
   this.threadId;
   this.on(...);
@@ -201,10 +239,3 @@ version
     ---------      ---------------------
     0.12.9         3.28.71.19
     6.9.1          5.1.281.84
-
-
-待实现
-============================================================
-
-* 子线程功能函数扩展 -- 完成
-* js 对象序列化/反序列化  -- 性能慢一倍, 未启用

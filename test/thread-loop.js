@@ -1,5 +1,5 @@
 ﻿
-this.on('loop', function() {
+thread.on('loop', function() {
   for(;;);
 });
 

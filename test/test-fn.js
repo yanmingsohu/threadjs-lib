@@ -75,6 +75,10 @@ function testOffEvent(next) {
     next();
   });
 
+  th.on('error', function(e) {
+    console.error(e);
+  });
+
   th.send('remove_all', '!');
 }
 

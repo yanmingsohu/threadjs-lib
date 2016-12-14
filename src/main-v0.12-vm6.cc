@@ -223,7 +223,9 @@ static void do_script(void *arg) {
     code = 2;
     Local<Context> context = Context::New(isolate);
     Context::Scope context_scope(context);
-    Local<Object> j_context = context->Global();
+    Local<Object> j_context = Object::New(isolate);
+    Local<Object> global = context->Global();
+    global->Set(String::NewFromUtf8(isolate, "thread_context"), j_context);
     Local<Script> script = compilerCode(data.get());
 
     code = 3;
@@ -254,14 +256,14 @@ static void do_script(void *arg) {
 
         if (RecvEventData::hasEvent(main_event)) {
           uv_async_send(main_event);
-          continue;
         }
-        if (!more) {
+        else if (!more) {
           break;
         }
-        if (data->terminated) {
+        else if (data->terminated) {
           break;
         }
+
         if (CALL_JS_OBJ_FN_RET_BOOL(isolate, j_context, "noListener")) {
           break;
         }
@@ -297,6 +299,7 @@ static void recv_delete_event(uv_async_t *del_event) {
   uv_async_t* main_event = (uv_async_t*) del_event->data;
   DEL_UV_HANDLE_RECV_EVENT(main_event);
   DEL_UV_ASYNC(del_event);
+  // printf("!~ recv_delete_event");
 }
 
 
@@ -320,9 +323,9 @@ void j_create(const FunctionCallbackInfo<Value>& args) {
     //
     Local<Object> ret = Object::New(iso);
     create_uv_async(iso, ret, loop, reqdata->main_event, "MAIN");
-    set_method(iso, ret, "_stop", j_stop, reqdata);
+    set_method(iso, ret, "_stop",     j_stop,     reqdata);
     set_method(iso, ret, "_use_time", j_use_time, reqdata);
-    set_method(iso, ret, "_notify", j_notify, reqdata);
+    set_method(iso, ret, "_notify",   j_notify,   reqdata);
     id_pool.newid(iso, ret, reqdata);
 
     //
