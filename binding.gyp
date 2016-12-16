@@ -2,7 +2,12 @@
   "targets": [
     {
       "target_name"	: "threadnv",
-      "sources"		: [ "src/main.cc", "src/serialize.cc", "src/tools.cc" ],
+      "sources"		: [
+        "src/serialize.cc",
+        "src/tools.cc",
+        "src/timeImpl.cc",
+        "src/main.cc"
+      ],
       "include_dirs": [ ],
       'cflags'		: ['-fexceptions'],
       'cflags_cc'	: ['-fexceptions'],

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <set>
 #include <sstream>
+#include "timeImpl.h"
 #include "data.h"
 #include "serialize.h"
 
@@ -239,17 +240,21 @@ static void do_script(void *arg) {
     id_pool.setid(isolate, j_context, data.get());
     set_method(isolate, j_context, "_wait", j_wait, data.get());
 
+    code = 5;
+    LocalPoint<TimerPool> timepool(new TimerPool(loop));
+    InitTimerFunctions(isolate, timepool.get());
+
     {
       // TimeHandle local
-      code = 5;
+      code = 6;
       ReqData::TimeHandle th(data);
       script->Run();
       th.update();
     }
 
-    code = 6;
+    code = 7;
     if (!CALL_JS_OBJ_FN_RET_BOOL(isolate, j_context, "noListener")) {
-      code = 7;
+      code = 8;
       while (data->running) {
         ReqData::TimeHandle th(data);
         more = uv_run(data->sub_loop, UV_RUN_ONCE);
@@ -264,6 +269,7 @@ static void do_script(void *arg) {
           break;
         }
 
+        // 即使有定时器在运行, 没有监听器也会退出
         if (CALL_JS_OBJ_FN_RET_BOOL(isolate, j_context, "noListener")) {
           break;
         }
@@ -271,15 +277,15 @@ static void do_script(void *arg) {
     }
 
   } catch(...) {
-    std::string msg("Error: cannot create thread,");
+    std::string msg("Error: cannot create thread");
 
     switch(code) {
       case 1:
-        msg += "v8 Fatal error in heap setup"; break;
+        msg += ", v8 Fatal error in heap setup"; break;
       case 2:
-        msg += "compiler js code fail."; break;
+        msg += ", compiler js code fail."; break;
       default:
-        msg += "unknow code=" + code; break;
+        break;
     }
 
     Json root;

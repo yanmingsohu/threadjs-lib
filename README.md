@@ -9,6 +9,8 @@ Nodejs 多线程 / Nodejs Mulit Thread
 * 当子线程不再监听事件, 子线程会退出
 * 主线程空闲且所有子线程都退出后, 主线程也会退出
 
+!! 一个线程崩溃不影响其他线程
+
 > `npm start` 会启动一个命令行模式的线程
 > 输入 js 代码可以立即在线程中运行查看结果
 
@@ -146,6 +148,8 @@ new EventEmitter();
 //
 Math, Number, String, parseInt, parseFloat, Array,
 Boolean, Date, RegExp, Function, Error,
+setTimeout, setInterval, setImmediate, clearTimeout,
+clearInterval, clearImmediate,
 Int8Array, Uint8Array, Uint8ClampedArray, Int16Array,
 Uint16Array, Int32Array, Uint32Array, Float32Array,
 Float64Array, Int8Array,
@@ -169,7 +173,7 @@ Float64Array, Int8Array,
 
 `error`
 
-    { name: 'Error/CompilerError' }
+    回调参数: Error / CompilerError  
     当发生错误时主线程会接受到这个事件;
     CompilerError 编译错误: { jscode 出错的代码, columnnum 列, linenum 行 }
 
@@ -179,6 +183,11 @@ Float64Array, Int8Array,
 
 对子线程进行功能扩展
 ==================
+
+子线程使用一个消息来模拟调用函数, 库的代码在主线程中运行, 主线程运行结束
+使用消息将结果返回给子线程, 这种方式让子线程看起来在调用函数; 其运行机理
+与远程过程调用相似.
+
 
 ### 主线程代码
 
@@ -201,8 +210,8 @@ var thread_lib = {
 
 //
 // 实现函数的签名, args 是调用时的参数, next 是结束后的回调
-// next : Function(err, data)
-// unbind : Function() 调用后解除消息绑定
+// next   : Function(err, data)
+// unbind : Function() 调用后解除消息绑定 mult=true 时使用
 //
 function _fn(args, next, unbind) {
   // 当前线程上下文, 可以与调用此函数的子线程通讯
@@ -216,7 +225,9 @@ function _fn(args, next, unbind) {
   next(null, 'print over');
 }
 
-
+//
+// 创建线程时, 将扩展库对象传入
+//
 thlib.create(code[, 'filename', thread_lib]);
 ```
 

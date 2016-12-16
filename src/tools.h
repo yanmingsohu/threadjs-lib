@@ -18,6 +18,10 @@ using namespace std;
 struct RecvEventData;
 
 
+#define V8_CHAR(iso, str) \
+  String::NewFromUtf8(iso, str)
+
+
 #define DEL_UV_HANDLE_RECV_EVENT(h) \
   if (h) { \
     if (h->data) { \
@@ -29,17 +33,20 @@ struct RecvEventData;
     h = 0; \
   }
 
+
 #define DEL_UV_ASYNC(h) \
   if (h) { \
     uv_close((uv_handle_t*) h, when_handle_closed_cb); \
     h = 0; \
   }
 
+
 #define DEL_ARRAY(h) \
   if (h) { \
     delete [] h; \
     h = 0; \
   }
+
 
 #define DEL_LOOP(h) \
   if (h) { \
@@ -392,6 +399,39 @@ public:
 
   void Free(void* data, size_t) {
     free(data);
+  }
+};
+
+
+class SaveCallFunction {
+private:
+  Persistent<Function> fn;
+  Persistent<Object>   co;
+  Isolate             *iso;
+
+public:
+  SaveCallFunction(Local<Function> cb, Isolate *i,
+      Local<Object> thiz) : iso(i) {
+    fn.Reset(iso, cb);
+    co.Reset(iso, thiz);
+  }
+  SaveCallFunction(const SaveCallFunction &o) : iso(o.iso) {
+    fn.Reset(iso, o.fn);
+    co.Reset(iso, o.co);
+  }
+  SaveCallFunction& operator = (const SaveCallFunction &o) {
+    iso = o.iso;
+    fn.Reset(iso, o.fn);
+    co.Reset(iso, o.co);
+    return *this;
+  }
+  ~SaveCallFunction() {
+    fn.Reset();
+  }
+  void call() {
+    Local<Function> f = fn.Get(iso);
+    Local<Object>   c = co.Get(iso);
+    f->Call(c, 0, 0);
   }
 };
 
