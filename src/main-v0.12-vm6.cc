@@ -262,15 +262,22 @@ static void do_script(void *arg) {
         if (RecvEventData::hasEvent(main_event)) {
           uv_async_send(main_event);
         }
-        else if (!more) {
-          break;
-        }
-        else if (data->terminated) {
+
+        if (data->terminated) {
           break;
         }
 
-        // 即使有定时器在运行, 没有监听器也会退出
+        // 没有监听器的情况下, js 没有可达的代码, 也无法创建新监听器
+        // 此时移除事件是可行的, 在这种情况下, 其他的异步事件如果挂载
+        // 了新的监听器, 则让消息与循环重新关联
         if (CALL_JS_OBJ_FN_RET_BOOL(isolate, j_context, "noListener")) {
+          uv_unref((uv_handle_t*) data->sub_event);
+        } else {
+          uv_ref((uv_handle_t*) data->sub_event);
+          more = 1;
+        }
+
+        if (!more) {
           break;
         }
       }

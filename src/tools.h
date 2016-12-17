@@ -22,6 +22,7 @@ struct RecvEventData;
   String::NewFromUtf8(iso, str)
 
 
+// 删除 uv_async_t 句柄, 且绑定的数据为 RecvEventData
 #define DEL_UV_HANDLE_RECV_EVENT(h) \
   if (h) { \
     if (h->data) { \
@@ -34,6 +35,7 @@ struct RecvEventData;
   }
 
 
+// 只删除 uv_async_t 句柄, 且句柄中 data 为空
 #define DEL_UV_ASYNC(h) \
   if (h) { \
     uv_close((uv_handle_t*) h, when_handle_closed_cb); \
@@ -215,6 +217,7 @@ inline Local<T> copy(Isolate *iso, Persistent<T> *src) {
 
 
 void when_handle_closed_cb(uv_handle_t* handle);
+void donothing_closed_cb(uv_handle_t* handle);
 
 
 //
