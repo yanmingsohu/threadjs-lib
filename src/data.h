@@ -236,7 +236,7 @@ struct ReqData {
       data->begin_time = uv_now(data->sub_loop);
       data->end_time = 0;
     }
-  public:
+   public:
     TimeHandle(ReqData *rd) : data(rd) {
       init();
     }

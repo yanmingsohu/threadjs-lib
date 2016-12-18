@@ -211,6 +211,7 @@ static void do_script(void *arg) {
 
   try {
     CREATE_ISOLATE(isolate);
+    AutoDispose<Isolate> freeiso(isolate);
     Isolate::Scope isolate_scope(isolate);
     //
     // Fatal error in heap setup

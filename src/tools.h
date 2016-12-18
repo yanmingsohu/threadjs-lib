@@ -141,7 +141,7 @@ struct RecvEventData;
     ArrayBufferAllocator allo; \
     Isolate::CreateParams parm; \
     parm.array_buffer_allocator = &allo; \
-    Isolate * isolate = Isolate::New(parm)
+    Isolate * isolate = Isolate::New(parm); 
 #endif
 
 
@@ -308,6 +308,23 @@ private:
 };
 
 
+template<class T>
+class AutoDispose {
+private:
+  T *point;
+  AutoDispose(const AutoDispose &a);
+  void operator=(const AutoDispose &a);
+public:
+  AutoDispose(T *p) : point(p) {}
+  ~AutoDispose() {
+    if (point) {
+      point->Dispose();
+      point = 0;
+    }
+  }
+};
+
+
 class LockHandle {
   uv_mutex_t &data;
 
@@ -400,7 +417,7 @@ public:
     return malloc(length);
   }
 
-  void Free(void* data, size_t) {
+  void Free(void* data, size_t length) {
     free(data);
   }
 };

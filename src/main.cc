@@ -2,7 +2,7 @@
 
 
 #if NODE_MAJOR_VERSION == 0
-	#if   NODE_MINOR_VERSION == 12 
+	#if   NODE_MINOR_VERSION == 12
 		#include "main-v0.12-vm6.cc"
 	#elif NODE_MINOR_VERSION == 13
 		#include "main-v0.12-vm6.cc"
