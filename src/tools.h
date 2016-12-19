@@ -141,7 +141,7 @@ struct RecvEventData;
     ArrayBufferAllocator allo; \
     Isolate::CreateParams parm; \
     parm.array_buffer_allocator = &allo; \
-    Isolate * isolate = Isolate::New(parm); 
+    Isolate * isolate = Isolate::New(parm);
 #endif
 
 
@@ -449,8 +449,13 @@ public:
     fn.Reset();
   }
   void call() {
+#if NODE_MAJOR_VERSION >= 6
     Local<Function> f = fn.Get(iso);
     Local<Object>   c = co.Get(iso);
+#else
+    Local<Function> f = Local<Function>::New(iso, fn);
+    Local<Object>   c = Local<Object  >::New(iso, co);
+#endif
     f->Call(c, 0, 0);
   }
 };

@@ -10,7 +10,7 @@
       ],
       "include_dirs": [ ],
       'cflags'		: ['-fexceptions'],
-      'cflags_cc'	: ['-fexceptions'],
+      'cflags_cc'	: ['-fexceptions', '-std=c++11'],
       'win_delay_load_hook': 'false'
     }
   ]
