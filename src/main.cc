@@ -49,8 +49,7 @@ void hook_error() {
 #include <stdlib.h>
 #include <signal.h>
 
-void dump(int signo)
-{
+void dump(int signo) {
   void *array[10];
   size_t size;
   char **strings;
@@ -62,7 +61,7 @@ void dump(int signo)
   printf("Obtained %zd stack frames.\n", size);
 
   for (i = 0; i < size; i++)
-      printf("%s\n", strings[i]);
+      printf("  %02d  %s\n", i, strings[i]);
 
   free(strings);
   exit(0);

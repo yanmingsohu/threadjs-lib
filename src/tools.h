@@ -182,9 +182,19 @@ bool CALL_JS_OBJ_FN_RET_BOOL(Isolate* isolate, T& thiz, char* name) {
   HandleScope handle_scope(isolate);
   Local<Value> val = thiz->Get(String::NewFromUtf8(isolate, name));
   // CHECK_TYPE(Function, isolate, val, "must function");
+  TryCatch jtry;
   Local<Function> func = val.As<Function>();
   Local<Value> ret = func->Call(thiz, 0, 0);
-  return ret->IsTrue() == true;
+
+  if (jtry.HasCaught()) {
+    String::Utf8Value ex(jtry.Exception());
+    String::Utf8Value st(jtry.StackTrace());
+    printf("WARN: c++::CALL_JS_OBJ_FN_RET_BOOL DO js::%s function, "
+           "excepion: %s %s.\n", name, *ex, *st);
+    return false;
+  }
+
+  return ret->IsTrue();
 }
 
 
