@@ -10,6 +10,7 @@
 #include <string>
 #include <set>
 #include <cstdlib>
+#include <nan.h>
 
 using namespace v8;
 using namespace node;
@@ -61,7 +62,7 @@ struct RecvEventData;
 
 // FCI: FunctionCallbackInfo
 #define INIT_ISOLATE_FCI(iso, fci) \
-  Isolate *iso = fci.GetIsolate(); \
+  Isolate * const iso = fci.GetIsolate(); \
   HandleScope scope(iso);
 
 
@@ -89,7 +90,7 @@ struct RecvEventData;
 { \
   if (!object->Is##type ()) { \
     Local<String> err = String::NewFromUtf8(iso, errmsg); \
-    iso->ThrowException(err); \
+    Nan::ThrowError(err); \
     return; \
   } \
 }
@@ -99,7 +100,7 @@ struct RecvEventData;
 { \
   if (object->IsNull() || object->IsUndefined()) { \
     Local<String> err = String::NewFromUtf8(iso, errmsg); \
-    iso->ThrowException(err); \
+    Nan::ThrowError(err); \
     return; \
   } \
 }
@@ -108,7 +109,7 @@ struct RecvEventData;
 #define THROW_EXP(iso, errmsg) \
 { \
   Local<String> err = String::NewFromUtf8(iso, errmsg); \
-  iso->ThrowException(err); \
+  Nan::ThrowError(err); \
 }
 
 
@@ -292,17 +293,23 @@ public:
 };
 
 
+template<class T>
+void _only_delete(T *p) {
+  delete p;
+};
+
+
 //
 // 函数范围内安全的指针, 函数返回, 指针被删除, 不可复制
 //
-template<class T>
+template<class T, void (*DEL)(T*) = _only_delete<T> >
 class LocalPoint {
   T *point;
 public:
   LocalPoint(T *p) : point(p) {}
   ~LocalPoint() {
     if (point) {
-      delete point;
+      DEL(point);
       point = 0;
     }
   }

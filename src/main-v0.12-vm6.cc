@@ -5,6 +5,7 @@
 #include <iostream>
 #include <set>
 #include <sstream>
+#include <nan.h>
 #include "timeImpl.h"
 #include "data.h"
 #include "serialize.h"
@@ -47,6 +48,94 @@ static inline Local<Script> compilerCode(ReqData *data) {
   CACHE_V8_ERR_SEND_EVNET(data->sub_iso, data->main_event, jtry, "CompilerError");
   Local<Script> script = unbound->BindToCurrentContext();
   return script;
+}
+
+
+//
+// 运行一段脚本, 可以正确的抛出异常堆栈, 取代全局 eval()
+// eval(filename, code, offset, context)
+//
+void j_eval(const FunctionCallbackInfo<Value>& args) {
+  RET_OBJ_FUNCTION_INIT(iso, args, thiz) {
+    CHECK_TYPE(String, iso, args[0], "first argument must FILENAME string");
+    CHECK_TYPE(String, iso, args[1], "first argument must JSCODE string");
+    Local<Integer> offset;
+    Local<Context> context;
+
+    if (args[2]->IsNumber()) {
+      offset = args[2].As<Integer>();
+    } else {
+      offset = Integer::New(iso, 0);
+    }
+
+    if (args[3]->IsObject()) {
+      context = args[3].As<Object>()->CreationContext();
+    } else {
+      context = iso->GetCurrentContext();
+    }
+
+    Local<String> filename = args[0].As<String>();
+    Local<String> code = args[1].As<String>();
+    ScriptOrigin origin(filename, offset);
+    ScriptCompiler::Source source(code, origin);
+
+    Context::Scope context_scope(context);
+    Local<UnboundScript> unbound = ScriptCompiler::CompileUnbound(iso, &source);
+    Local<Script> script = unbound->BindToCurrentContext();
+    args.GetReturnValue().Set( script->Run() );
+  }
+}
+
+
+void j_create_context(const FunctionCallbackInfo<Value>& args) {
+  RET_OBJ_FUNCTION_INIT(iso, args, thiz) {
+    Local<Context> context = Context::New(iso);;
+    Local<Context> curr = iso->GetCurrentContext();
+    context->SetSecurityToken(curr->GetSecurityToken());
+    Local<Object> global = context->Global();
+    args.GetReturnValue().Set( global );
+  }
+}
+
+
+//
+// 将 nodejs native 实现绑定到对象上
+// args[0] -- Object 要绑定的对象.
+// args[1] -- native 模块的模块名
+//
+void j_binding(const FunctionCallbackInfo<Value>& args) {
+  RET_OBJ_FUNCTION_INIT(iso, args, thiz) {
+#ifdef MODULE_FUNCTIONS_EXPORTED
+    if (!args[0]->IsObject()) {
+      THROW_EXP(iso, "error: arg[0] is binding target [Object]");
+      return;
+    }
+
+    if (!args[1]->IsString()) {
+      THROW_EXP(iso, "error: arg[1] is module name [String]");
+      return;
+    }
+
+    Local<Context> context = iso->GetCurrentContext();
+    Local<Object> exports = args[0]->ToObject();
+    Nan::Utf8String module_name(args[1]);
+    node_module const* mod = get_builtin_module(*module_name);
+
+    if (mod != nullptr) {
+      if (mod->nm_context_register_func == nullptr) {
+        THROW_EXP(iso, "error: module cannot init");
+        return;
+      }
+      Local<Value> unused = Nan::Undefined();
+      mod->nm_context_register_func(exports, unused, context, mod->nm_priv);
+      args.GetReturnValue().Set(exports);
+    } else {
+      THROW_EXP(iso, "error: module not found");
+    }
+#else
+    THROW_EXP(iso, "error: 'binding' function need modified 'node' app");
+#endif
+  }
 }
 
 
@@ -97,17 +186,26 @@ void j_use_time(const FunctionCallbackInfo<Value>& args) {
 
 //
 // 在子线程上绑定的方法.
-// 如果可以在线程上等待, 则立即停止线程, 并发送 `_thread_locked` 事件,
-// 主线程调用 j_notify 解锁, 线程解锁后该函数会返回 notify 中设置的参数, 或返回 true;
-// 否则线程没有等待过则返回 false
+// 如果可以在线程上等待, 则立即停止线程, 并发送 args[0] 事件,
+// 主线程调用 j_notify 解锁, 线程解锁后该函数会返回 notify 中设置的参数,
+// 或返回 true; 否则线程没有等待过则返回 false
+// args[0] -- JSON 对象字符串, 用于发送消息
 //
 void j_wait(const FunctionCallbackInfo<Value>& args) {
   RET_OBJ_FUNCTION_INIT(iso, args, thiz) {
     GET_FCI_EXTERNAL_ATTR(args, edata, ReqData, req);
     bool canwait = !req->wait.is_locked();
     if (canwait) {
-      RecvEventData::sendEvent(
-        req->main_event, "{ \"name\": \"_thread_locked\" }");
+      if (!args[0]->IsString()) {
+        THROW_EXP(iso, "error: arg[0] is not JSON String");
+        return;
+      }
+
+      char eventdata[128];
+      Local<String> str = Local<String>::Cast(args[0]);
+      str->WriteUtf8(eventdata, sizeof(eventdata));
+      eventdata[str->Utf8Length() + 1] = 0;
+      RecvEventData::sendEvent(req->main_event, eventdata);
 
       req->wait.lock();
 
@@ -137,6 +235,7 @@ void j_notify(const FunctionCallbackInfo<Value>& args) {
         int  len;
         char *data;
         v8val_to_char(args[0], data, len);
+        // wait 对象会释放 data 内存
         req->wait.setData(data);
       }
       req->wait.unlock();
@@ -235,11 +334,20 @@ static void do_script(void *arg) {
     uv_loop_init(loop);
     data->sub_loop = loop;
 
+#ifdef MODULE_FUNCTIONS_EXPORTED
+    Environment* node_env = CreateEnvironment(
+        isolate, loop, context, 0, NULL, 0, NULL);
+    LocalPoint<Environment, FreeEnvironment> _del_env(node_env);
+#endif
+
     code = 4;
     create_uv_async(isolate, j_context, loop, data->sub_event, "SUB");
     bind_peer_event(data.get());
     id_pool.setid(isolate, j_context, data.get());
     set_method(isolate, j_context, "_wait", j_wait, data.get());
+    set_method(isolate, j_context, "_eval", j_eval, data.get());
+    set_method(isolate, j_context, "_create_context", j_create_context, data.get());
+    set_method(isolate, j_context, "_binding", j_binding, data.get());
 
     code = 5;
     LocalPoint<TimerPool> timepool(new TimerPool(loop));
@@ -268,9 +376,11 @@ static void do_script(void *arg) {
           break;
         }
 
+        //
         // 没有监听器的情况下, js 没有可达的代码, 也无法创建新监听器
         // 此时移除事件是可行的, 在这种情况下, 其他的异步事件如果挂载
         // 了新的监听器, 则让消息与循环重新关联
+        //
         if (CALL_JS_OBJ_FN_RET_BOOL(isolate, j_context, "noListener")) {
           uv_unref((uv_handle_t*) data->sub_event);
         } else {
@@ -283,7 +393,6 @@ static void do_script(void *arg) {
         }
       }
     }
-
   } catch(...) {
     std::string msg("Error: cannot create thread");
 

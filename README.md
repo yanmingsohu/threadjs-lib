@@ -8,11 +8,21 @@ Nodejs 多线程 / Nodejs Mulit Thread
 * 子线程的主动挂起, 用来模拟同步操作
 * 主线程空闲且所有子线程都退出后, 主线程也会退出
 * 用 libuv 挂载的事件可以正确处理
+* 使用 `npm test` 进行测试, 需要全局安装 `mocha`
+* 可以在子线程中运行 nodejs 导出的本机方法
 
 !! 一个线程崩溃不影响其他线程
 
 > `npm start` 会启动一个命令行模式的线程
 > 输入 js 代码可以立即在线程中运行查看结果
+
+
+编译
+=====
+
+本项目使用默认 node 程序编译通过, 但缺少功能, 若需要完整的功能, 则克隆 [项目](https://github.com/yanmingsohu/node.git), 并编译安装; 在安装 threadjs-lib 前设置 NODE_DIR 环境变量为 node.git 的下载目录;
+
+(*1*) 有该标识的函数需要这样编译方可使用.
 
 
 主线程中的 Api / Main thread Usage
@@ -69,8 +79,10 @@ handle.on('[message name]', function(data) {
 
 //
 // 当主线程收到这个消息说明子线程已经挂起
+// 如果调用 wait 时提供了事件名, 则发送对应的消息
+// _wait_event_name 默认使用 '_thread_locked' 消息
 //
-handle.on('_thread_locked', function() {
+handle.on(_wait_event_name, function(_wait_event_data) {
   //
   // 必须在接受到 _thread_locked 之后再合适的时候唤醒子线程, 否则子线程将无尽的等待
   // notify 的参数是唤醒数据, 将被子线程 wait 方法返回, 一旦成功该方法返回 true
@@ -99,6 +111,7 @@ handle.stop();
 //
 // 返回上一次执行脚本花费的时间, 毫秒
 // 如果线程正在执行, 会返回当前脚本花费时间
+// 当一个线程长时间执行死循环, 这个时间会无限延长
 //
 handle.use_time();
 ```
@@ -109,7 +122,7 @@ handle.use_time();
 
 ```js
 //
-// 接收来自主线程的数据
+// 接收来自主线程的数据, `thread` 是全局对象.
 // recive message from Main Node Engine
 //
 thread.on('message-name', function(data) {});
@@ -128,15 +141,43 @@ thread.send('message-name', data);
 thread.off('message-name', Function);
 
 //
-// 挂起子线程, 直到被唤醒才返回, 如果 notify 设置了唤醒数据则返回数据
-// 否则返回 true; 如果返回了 false 说明 wait 方法挂起失败.
+// 删除所有监听器, 这可能导致线程结束
 //
-thread.wait();
+thread.offall();
 
 //
-// 运行一段代码并返回, this 为当前全局上下文
+// 挂起子线程, 直到被唤醒才返回, 如果 notify 设置了唤醒数据则返回数据
+// 否则返回 true; 如果返回了 false 说明 wait 方法挂起失败.
+// _wait_event_name -- 发送一个事件到主线程, 默认 `_thread_locked`
+// _wait_event_data -- 事件接收器收到的数据
 //
-eval(code);
+thread.wait(_wait_event_name, _wait_event_data);
+
+//
+// 创建一个上下文对象用于执行 eval()
+//
+thread.create_context();
+
+//
+// 运行一段代码并返回, 如果未提供 context 参数 this 为 thread 上下文.
+//
+thread.eval(code, filename, offset, context);
+
+//
+// 返回 nodejs 模块, 这个模块必须是 c++ 实现的内置类型.
+// 如果模块无效或被过滤器拦截, 会抛出异常.
+// (*1*)
+//
+thread.binding(native_module_name, binding_target);
+
+//
+// 当调用 binding 时, 首先会使用 filter_fn 过滤模块名,
+// 可以在 filter_fn 中抛出异常或返回 true 来阻止模块被加载
+//
+thread.add_bind_filter(filter_fn)
+thread.remove_bind_filter(filter_fn)
+
+function filter_fn(native_module_name) {}
 
 //
 // 事件, 与 nodejs 定义相同
@@ -243,10 +284,11 @@ thread.namespace.getNextId('print current year chart', function(err, ret) {
 })
 ```
 
+
 version
 ========
 
-    nodejs         v8
-    ---------      ---------------------
-    0.12.9         3.28.71.19
-    6.9.1          5.1.281.84
+threadjs    nodejs     v8
+----------  ---------  --------------
+0.1.x       0.12.9     3.28.71.19
+0.1.x       6.9.1      5.1.281.84

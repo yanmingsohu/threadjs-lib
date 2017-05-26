@@ -1,26 +1,12 @@
-
-// 兼容 nodejs
-if (!thread) {
-  var thread = {
-    http : require('http')
-  };
-  console.test = console.log;
-}
-﻿
-// thread.eval("");
-// this.eval("");
-// this.constructor.eval("")
-console.log('console.log is success');
-console.test('a', 'b', 'c', 'd', function(err, ret) {
-  console.log('test call back.');
-});
-
-function code_err() {
-  // (-)
-}
+try { it; return; } catch(e) {}
 
 
-thread.http.get('http://baidu.com', null, function(err, ret) {
-  console.log('http get::', err, ret);
-  thread.send('over');
+thread.on('url', function(url) {
+  thread.http.get(url, null, function(err, ret) {
+    if (err) {
+      thread.send('error', err);
+    } else {
+      thread.send('over', ret);
+    }
+  });
 });

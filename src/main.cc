@@ -42,7 +42,7 @@ void hook_error() {
 	SetUnhandledExceptionFilter(exception_handle);
 }
 
-#else
+#else /* _WIN32_WINNT end, LINUX begin */
 
 #include <execinfo.h>
 #include <stdio.h>
@@ -68,7 +68,7 @@ void dump(int signo) {
 }
 
 void hook_error() {
-	// cout << "No error hook" << endl;
+	// cout << "Linux error hook" << endl;
   signal(SIGSEGV, &dump);
 }
 #endif

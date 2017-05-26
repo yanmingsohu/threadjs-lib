@@ -1,7 +1,21 @@
-var thlib = require('../');
-var native = require('bindings')('threadnv');
-console.log("V8:", native.v8version());
+//
+// 使用 node 启动, 运行压力测试
+// 使用 mocha 启动, 运行测试
+//
+var thlib   = require('../');
+var native  = require('bindings')('threadnv');
+var assert  = require('assert');
 
+var not_copy = {
+  g: new String('abc'),
+  e: function() {console.log('no')},
+  f: new Date(),
+  h: /abc/g,
+  i: new Number(12),
+  j: Boolean(true),
+  cicle: null,
+  arr: [],
+};
 
 var data = {
   '0':null,
@@ -16,15 +30,7 @@ var data = {
   d:"abcdffffffffffffffffffffffffffffffffffffffffffffffe",
   d1:"abcdffffffffffffffffffffffffffffffffffffffffffffffe",
   d2:"abcdffffffffffffffffffffffffffffffffffffffffffffffe",
-  e: function() {console.log('no')},
-  f: new Date(),
-  g: new String('abc'),
-  h: /abc/g,
-  i: new Number(12),
-  j: Boolean(true),
-  cicle: null,
-  arr: [],
-
+  big : [],
   deep: {
     c: {
       a:1, b:2, c:3,
@@ -34,35 +40,38 @@ var data = {
         d2:"abcdffffffffffffffffffffffffffffffffffffffffffffffe",
       }]
     }
-  }
+  },
 };
 
-// 循环引用检测 !
-// data.cicle = data;
+for (var i=0; i<1000; ++i) {
+  data.big.push(i);
+}
 
-// Big data
-// for (var i=0; i<10000; ++i) {
-//   data.arr.push(i);
-// }
+// 循环引用检测 !(未实现)
+// not_copy.cicle = not_copy;
 
-one();
-mem();
+
+try {
+  describe.call;
+  one();
+} catch(e) {
+  console.log('开始压力测试');
+  mem();
+}
 
 
 function one() {
-  var ret = native.ser_test(data);
+  describe('native serialize', function() {
+    it('#ser_test()', function() {
+      var ret = native.ser_test(data);
+      assert.deepEqual(ret, data);
+    });
 
-  console.log('\n原始 >>>>>>>>>>>>');
-  console.log(data);
-  console.log('\n变换 ============');
-  console.log(ret);
-  console.log('\nJSON ++++++++++++');
-  console.log(JSON.parse(JSON.stringify(data)));
-  
-  data.big = [];
-  for (var i=0; i<1000; ++i) {
-    data.big.push(i);
-  }
+    it('copy fail', function() {
+      var ret = native.ser_test(not_copy);
+      assert.notDeepEqual(ret, not_copy);
+    });
+  });
 }
 
 

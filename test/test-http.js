@@ -1,31 +1,52 @@
-﻿var fs = require('fs');
-var thlib = require('../');
+describe('Exports HTTP to thread', function() {
+
+var fs        = require('fs');
+var thlib     = require('../');
+var deferred  = require('deferred');
+var assert    = require('assert');
+
 var fname = __dirname + '/thread-http.js';
-var code = fs.readFileSync(fname, 'utf8');
+var code  = fs.readFileSync(fname, 'utf8');
+var url   = 'http://www.sogou.com/';
 
 
+var right_body;
 var dlib = thlib.default_lib;
-
 dlib.http = http_proxy();
 
 
-module.exports.do = function(_over) {
+it('Main http() ' + url, function(done) {
+  var thiz = this;
+  dlib.http.get.fn([url, null], function(e, ret) {
+    if (e) {
+      done(e);
+    } else {
+      right_body = ret;
+      done();
+    }
+  });
+});
+
+
+it('Thread http()', function(done) {
   var th = thlib.create(code, fname, dlib);
-  console.log('\n============== Start: HTTP function');
+  th.send('url', url);
 
   th.on('error', function(e) {
-    console.log('Thread error:', '\n\t', e.message, '\n\t', e.stack);
+    done(e);
   });
 
   th.on('end', function() {
-    console.log('success: thread function stop');
-    _over && _over();
   });
 
-  th.on('over', function() {
-    //th.send('ok');
-  })
-};
+  th.on('over', function(ret) {
+    if (ret.headers && ret.statusCode && ret.data === right_body.data) {
+      done();
+    } else {
+      done(new Error('is not http return data'));
+    }
+  });
+});
 
 
 function http_proxy() {
@@ -68,3 +89,5 @@ function http_proxy() {
     }).on('error', next);
   }
 }
+
+});

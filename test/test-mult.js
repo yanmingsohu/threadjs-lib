@@ -1,7 +1,12 @@
-﻿var fs = require('fs');
-var thlib = require('../');
-var fname = __dirname + '/thread-mult.js';
-var code = fs.readFileSync(fname, 'utf8');
+describe('Multiple Threads', function() {
+
+var deferred  = require('deferred');
+var fs        = require('fs');
+var thlib     = require('../');
+var assert    = require('assert');
+var fname     = __dirname + '/thread-mult.js';
+var code      = fs.readFileSync(fname, 'utf8');
+
 var threadcount = 10;
 var messagecount = 3;
 
@@ -9,71 +14,31 @@ var messagecount = 3;
 var check_data = {};
 
 
-module.exports.do = function(_over) {
-  log('\n============== Start: mult thread', threadcount);
-  process.on('beforeExit', beforeExit);
-  newThread(0);
+for (var i=0; i<threadcount; ++i) {
+  describe('Thread ' + i, function() {
+    newThread(i);
+  });
+}
 
-  //
-  // 正确/错误/所有情况下都应该结束进行, 否则是 c++ 进程管理有问题
-  //
-  function beforeExit() {
-    process.removeListener('beforeExit', beforeExit);
-    log('All Thread exit');
-    var wrong = [];
-    var time = [];
-    var saved = {};
+after(function() {
+  var max=0, min=0, c=0, total=0;
 
-    for (var ti=0; ti < threadcount; ++ti) {
-      var th = check_data[ti];
-
-      if (!th) {
-        push('thread not start tid: ', th.threadId);
-      } else {
-        for (var mi=1; mi<= messagecount; ++mi) {
-          // console.log(ti, mi, th);
-          if (!xCompare(th.send[mi], th.recv[mi]) ) {
-            push('data wrong tid: ',  th.threadId);
-          } else {
-            var r = th.recv[mi];
-            // 算入启动线程的时间
-            time.push('Th:' + th.threadId + ' msg:' + mi + '\t' + (r.end-r.start) + ' ms');
-          }
-        }
-      }
-    }
-
-    function push(msg, id) {
-      if (saved[id]) return;
-      saved[id] = true;
-      wrong.push(msg + id);
-    }
-
-    if (wrong.length > 0) {
-      log(check_data);
-      log('\n[has error]:\n\t', wrong.join("\n\t"));
-    } else {
-      log('\n[thread transfer data use]\n\t', time.join("\n\t"));
-      log('[All success]');
-    }
-
-    if (_over) {
-      _over();
-    } else {
-      process.exit(0);
+  for (var id in check_data) {
+    var use = check_data[id].use;
+    for (var n in use) {
+      var i = use[n];
+      max = Math.max(max, i);
+      min = Math.min(min, i);
+      ++c;
+      total += i;
     }
   }
-}
 
+  console.log('\tUse:', mem_use(), ', Event Time Max:', max,
+    'ms, Min:', min, 'ms, Average:', (total/c).toFixed(2),
+    'ms, Total', c, 'events.');
+});
 
-function xCompare(s, r) {
-  return s && r && s.main_id == r.sub_id && s.msg_id == r.msg_id;
-}
-
-
-function log() {
-  console.log.apply(console, arguments);
-}
 
 
 //
@@ -81,50 +46,61 @@ function log() {
 //
 function newThread(i) {
   var th = thlib.create(code, fname, thlib.default_lib);
-  var x = 0;
-  var start = Date.now();
-  var ck = check_data[i] = { recv:{}, send:{}, threadId: th.threadId };
+  var xs = 0, xa = 0;
+  var start;
+  var ck = check_data[i] = { recv:{}, send:{}, use:{}, threadId: th.threadId };
   // log('start new thread', i, mem_use());
 
   th.on('submessage', function(data) {
     // log('!!! main is recive:', data, "\t", mem_use());
-    data.end = Date.now();
+    ck.use[data.msg_id] = Date.now() - data.start;
     ck.recv[data.msg_id] = data;
-    if (data.msg_id >= messagecount) {
+
+    if (data.msg_id >= messagecount*2-1) {
       th.stop();
     }
   });
 
+  var ret = deferred();
   th.on('end', function() {
-    ck.stop = true;
+    try {
+      assert.deepEqual(ck.recv, ck.send);
+      ret.resolve();
+    } catch(e) {
+      ret.reject(e);
+    }
   });
 
   th.on('error', function(e) {
-    ck.error = e;
+    ret.reject(e);
   });
 
-  if (i<threadcount) {
-    setTimeout(function() {
-      newThread(i+1);
-    }, 10);
-  }
+  it('start', function() {
+    start = Date.now();
+  });
 
   // return;
-  sendNotAsync();
-  sendInAsync();
+  it('send data to thread with sync', sendNotAsync);
+  it('send data to thread with async', sendInAsync);
+
+  it('check results', function(done) {
+    ret.promise(done, done);
+  });
 
 
   function sendNotAsync() {
-    while (++x < messagecount) {
-      _send('s');
+    while (xs < messagecount) {
+      _send('s', xs);
+      ++xs;
     }
     // log('Sync thread over', i, 'use', (Date.now() - start)/1000, 'm');
   }
 
   function sendInAsync() {
     var tid = setInterval(function() {
-      _send('a');
-      if (++x >= messagecount) {
+      _send('a', xa);
+      ++xa;
+      if (xa >= messagecount) {
         clearInterval(tid);
         // log('Async thread over', i, 'use', (Date.now() - start)/1000, 'm');
         // th.stop();
@@ -132,13 +108,13 @@ function newThread(i) {
     }, 1);
   }
 
-  function _send(t) {
+  function _send(t, x) {
+    var id = xa+xs;
     // th.send('mainmessage', t+'.main=\t' + i + "\t" + x);
-    var s = ck.send[x] = {
-      main_id : th.threadId,
-      sub_id  : null,
-      start   : start,
-      msg_id  : x,
+    var s = ck.send[id] = {
+      t_id    : th.threadId,
+      start   : Date.now(),
+      msg_id  : xa+xs,
     };
     th.send('mainmessage', s);
   }
@@ -162,3 +138,5 @@ function mem_use() {
   }
   return use.toFixed(0) + ' ' + unit;
 }
+
+});

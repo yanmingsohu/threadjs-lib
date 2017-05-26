@@ -8,7 +8,9 @@
         "src/timeImpl.cc",
         "src/main.cc"
       ],
-      "include_dirs": [ ],
+      "include_dirs": [
+        "<!(node -e \"require('nan')\")"
+      ],
       'cflags'		: ['-fexceptions'],
       'cflags_cc'	: ['-fexceptions', '-std=c++11'],
       'win_delay_load_hook': 'false'
