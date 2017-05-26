@@ -13,6 +13,10 @@ var code = fs.readFileSync(fname, 'utf8');
 var th = thlib.create(code, fname, thlib.default_lib);
 var success;
 
+// process.on('exit', (code) => {
+//   console.log('exit');
+// });
+
 
 var _err = deferred();
 th.on('error', function(e) {

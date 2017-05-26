@@ -81,7 +81,9 @@ void j_eval(const FunctionCallbackInfo<Value>& args) {
 
     Context::Scope context_scope(context);
     Local<UnboundScript> unbound = ScriptCompiler::CompileUnbound(iso, &source);
+    // 使用代码: 'function() {}' 会让进程崩溃
     Local<Script> script = unbound->BindToCurrentContext();
+
     args.GetReturnValue().Set( script->Run() );
   }
 }

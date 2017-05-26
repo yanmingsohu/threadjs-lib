@@ -1,5 +1,9 @@
 try { it; return; } catch(e) {}
 
+// 运行这个代码, 进程崩溃
+// npm ERR! code ELIFECYCLE
+// npm ERR! Exit status 3221225477
+// thread.eval('function() {}', 'shutdown');
 
 var context = thread.create_context();
 context.thread = 'haha';

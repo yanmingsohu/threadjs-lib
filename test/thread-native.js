@@ -40,7 +40,7 @@ process.cwd = function() {
 function __none() {}
 
 thread.on('error', function(e) {
-  console.log('F!', e);
+  console.log('THREAD', e);
 });
 
 var context = thread.create_context();
@@ -69,20 +69,14 @@ function require(name) {
   if (!code)
     throw new Error('module fail: "' + name + '"');
 
-  console.debug('require::native \t', name);
+  // console.debug('require::native \t', name);
   module = {
     exports  : {},
     cache    : _cache,
     id       : '[native::' + name + ']',
   };
 
-  var warp_code = [
-    '(function(exports, require, module, __filename, __dirname) {\n',
-    code,
-    '\n})',
-  ].join('');
-
-  var init_fn = thread.eval(warp_code, module.id, -1, context);
+  var init_fn = run_script(code, module);
   _cache[name] = module;
 
   init_fn.call(context,
@@ -90,6 +84,17 @@ function require(name) {
 
   return module.exports;
 };
+
+
+function run_script(code, module) {
+  var warp_code = [
+    '(function(exports, require, module, __filename, __dirname) {\n',
+    code,
+    '\n})',
+  ].join('');
+
+  return thread.eval(warp_code, module.id, -1, context);
+}
 
 
 process.constants(function(err, _constants) {
@@ -111,20 +116,22 @@ process.constants(function(err, _constants) {
 });
 
 
-thread.on('readfile', function(filename) {
-  try {
-    var fs = require('fs');
-    var ret = fs.readFile(filename, 'utf8', function(err, ret) {
-      if (err) thread.send('error', err.stack);
-      else thread.send('file-ret', ret);
-    });
-  } catch(e) {
-    thread.send('error', e.stack);
+function ERR(e) {
+  if (!e) return;
+  else {
+    return {
+      name : e.name,
+      stack : e.stack,
+      message : e.message,
+    }
   }
-});
+}
 
 
-thread.on('http-get', function(url) {
+//==============================================================================
+
+
+thread.on('http.get()', function(url) {
   try {
     var http = require('http');
     var buffer = require('buffer').Buffer;
@@ -136,17 +143,38 @@ thread.on('http-get', function(url) {
       });
       resp.on('end', function() {
         var buf = buffer.concat(bufs);
-        thread.send('http-ret', 'yes');
+        thread.send('http.get()', [null, buf]);
       });
       resp.on('error', function(e) {
-        thread.send('error', e.stack);
+        thread.send('http.get()', [ERR(e)]);
       });
     });
 
     req.on('error', function(e) {
-      thread.send('error', e.stack);
+      thread.send('http.get()', [ERR(e)]);
     });
   } catch(e) {
-    thread.send('error', e.stack);
+    thread.send('http.get()', [ERR(e)]);
   }
+});
+
+//
+// 通用测试工具
+//
+thread.on('eval_code', function(event_name) {
+  // fn : Function(args, cb)
+  thread.once(event_name, function(r) {
+    try {
+      var context = thread.create_context();
+      context.require = require;
+      context.process = process;
+
+      var fn = thread.eval('(' + r.code + ')', r.name, 0, context);
+      fn(r.args, function(err, ret) {
+        thread.send(r.name, [ERR(err), ret]);
+      });
+    } catch(e) {
+      thread.send(r.name, [ERR(e)]);
+    }
+  });
 });
