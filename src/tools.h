@@ -115,14 +115,16 @@ struct RecvEventData;
 
 #define CACHE_V8_ERR_SEND_EVNET(iso, target, jtry, error_type) \
   if (jtry.HasCaught()) { \
-    String::Utf8Value exception(jtry.Exception()); \
     Local<Message> msg = jtry.Message(); \
+    String::Utf8Value exception(jtry.Exception()); \
     String::Utf8Value line(msg->GetSourceLine()); \
+    String::Utf8Value stack(jtry.StackTrace()); \
     Json jroot; \
     jroot.set("name", "error"); \
     Json jdata = jroot.childen("data"); \
     jdata.set("name",      error_type); \
     jdata.set("message",   *exception); \
+    jdata.setMultLine("stack", *stack); \
     jdata.set("linenum",   msg->GetLineNumber()); \
     jdata.set("columnnum", msg->GetStartColumn()); \
     jdata.set("jscode",    *line); \
@@ -280,6 +282,22 @@ public:
   void set(K k, V v) {
     write_key(k);
     *buf << '"' << v << '"';
+  }
+
+  template<class K, class V>
+  void setMultLine(K k, V v) {
+    write_key(k);
+    *buf << '"';
+    for (int i=0; v[i]; ++i) {
+      if (v[i] == '\n') {
+        *buf << "\\n";
+      } else if (v[i] == '\r') {
+        *buf << "\\r";
+      } else {
+        *buf << v[i];
+      }
+    }
+    *buf << '"';
   }
 
   // 闭合一个对象
@@ -445,36 +463,32 @@ private:
   Persistent<Function> fn;
   Persistent<Object>   co;
   Isolate             *iso;
+  uv_async_t          *target;
 
 public:
   SaveCallFunction(Local<Function> cb, Isolate *i,
-      Local<Object> thiz) : iso(i) {
+      Local<Object> thiz, uv_async_t* t=NULL) : iso(i), target(t) {
     fn.Reset(iso, cb);
     co.Reset(iso, thiz);
   }
-  SaveCallFunction(const SaveCallFunction &o) : iso(o.iso) {
+  SaveCallFunction(const SaveCallFunction &o) : iso(o.iso), target(o.target) {
     fn.Reset(iso, o.fn);
     co.Reset(iso, o.co);
   }
   SaveCallFunction& operator = (const SaveCallFunction &o) {
-    iso = o.iso;
+    iso    = o.iso;
+    target = o.target;
     fn.Reset(iso, o.fn);
     co.Reset(iso, o.co);
     return *this;
   }
   ~SaveCallFunction() {
     fn.Reset();
+    co.Reset();
+    iso = NULL;
+    target = NULL;
   }
-  void call() {
-#if NODE_MAJOR_VERSION >= 6
-    Local<Function> f = fn.Get(iso);
-    Local<Object>   c = co.Get(iso);
-#else
-    Local<Function> f = Local<Function>::New(iso, fn);
-    Local<Object>   c = Local<Object  >::New(iso, co);
-#endif
-    f->Call(c, 0, 0);
-  }
+  void call();
 };
 
 

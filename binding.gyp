@@ -4,6 +4,7 @@
       "target_name"	: "threadnv",
       "sources"		: [
         "src/serialize.cc",
+        "src/data.cc",
         "src/tools.cc",
         "src/timeImpl.cc",
         "src/main.cc"

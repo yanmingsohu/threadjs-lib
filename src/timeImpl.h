@@ -55,7 +55,8 @@ public:
 };
 
 
-void InitTimerFunctions(Isolate *isolate, TimerPool *data);
+void InitTimerFunctions(
+  Isolate *isolate, TimerPool *data, uv_async_t *event_target);
 
 
 #endif // THREAD_TIMER

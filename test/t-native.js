@@ -14,7 +14,7 @@ var result = deferred();
 
 
 th.on('error', function(e) {
-  console.log('!!', e);
+  console.log(e);
   result.reject(e);
 });
 
@@ -36,6 +36,9 @@ it('fs.readFile() on thread', function(done) {
     } catch(e) {
       af.reject(e);
     }
+  });
+  th.once('error', function(e) {
+    af.reject(e);
   });
   th.send('readfile', fname);
   af.promise(done, done);

@@ -1,5 +1,6 @@
 #include <uv.h>
 #include "timeImpl.h"
+#include "data.h"
 #include "tools.h"
 
 
@@ -9,9 +10,15 @@ void j_setImmediate(const FunctionCallbackInfo<Value>& args);
 void j_clear_time(const FunctionCallbackInfo<Value>& args);
 
 
-void InitTimerFunctions(Isolate *isolate, TimerPool *tp) {
+void InitTimerFunctions(Isolate *isolate,
+      TimerPool *tp, uv_async_t *event_target) {
   Local<Context> context = isolate->GetEnteredContext();
   Local<Object> global = context->Global();
+
+  global->SetHiddenValue(
+    String::NewFromUtf8(isolate, "event_target"),
+    External::New(isolate, event_target) );
+
   set_method(isolate, global, "setTimeout",     j_setTimeout,   tp);
   set_method(isolate, global, "setInterval",    j_setInterval,  tp);
   set_method(isolate, global, "setImmediate",   j_setImmediate, tp);
@@ -116,7 +123,14 @@ static inline void _j_time(const FunctionCallbackInfo<Value>& args,
   CHECK_TYPE(Function, iso, args[0], "callback function is null");
   GET_FCI_EXTERNAL_ATTR(args, _ex, TimerPool, times);
 
-  TimerCall scb(args[0].As<Function>(), iso, args.This());
+  Local<Context> context = iso->GetEnteredContext();
+  Local<Object> global = context->Global();
+
+  Local<External> event_target_warp =
+    global->GetHiddenValue(String::NewFromUtf8(iso, "event_target")).As<External>();
+  uv_async_t *event_target = (uv_async_t *) event_target_warp->Value();
+
+  TimerCall scb(args[0].As<Function>(), iso, args.This(), event_target);
   Timer* timer = times->createTimer(scb);
   timer->start(timeout, repeat);
 

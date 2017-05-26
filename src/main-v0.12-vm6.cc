@@ -351,7 +351,7 @@ static void do_script(void *arg) {
 
     code = 5;
     LocalPoint<TimerPool> timepool(new TimerPool(loop));
-    InitTimerFunctions(isolate, timepool.get());
+    InitTimerFunctions(isolate, timepool.get(), data->main_event);
 
     {
       // TimeHandle local
