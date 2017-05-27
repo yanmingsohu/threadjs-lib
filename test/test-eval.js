@@ -13,13 +13,9 @@ var code = fs.readFileSync(fname, 'utf8');
 var th = thlib.create(code, fname, thlib.default_lib);
 var success;
 
-// process.on('exit', (code) => {
-//   console.log('exit');
-// });
-
 
 var _err = deferred();
-th.on('error', function(e) {
+th.once('error', function(e) {
   if (e.message.indexOf('not_exists') >= 0) {
     success = 1;
     _err.resolve();
@@ -32,43 +28,52 @@ it('thread throws error', function(done) {
 });
 
 
-var e2 = deferred();
-th.on('e2', function(b) {
-  var a = { thread: 'haha', a: 1 };
-  try {
-    assert.deepEqual(a, b, 'context fail');
-    e2.resolve();
-  } catch(e) {
-    e2.reject(e);
-  }
-});
 it('get context on thread', function(done) {
-  e2.promise(done, done);
+  var a = { thread: 'haha', a: 1 };
+
+  _eval('this', function(e, b) {
+    try {
+      assert.deepEqual(a, b, 'context fail');
+      done();
+    } catch(e) {
+      done(e);
+    }
+  });
 });
 
 
-var e1 = deferred();
-th.on('e1', function(d) {
-  if (d == 2) {
-    e1.resolve();
-  } else {
-    e1.reject(new Error('eval fail'));
-  }
+it('eval a*b', function(done) {
+  var tcode = Math.random() + ' * ' + Math.random();
+  _eval(tcode, function(e, b) {
+    try {
+      assert.deepEqual(eval(tcode), b, 'context fail');
+      done();
+    } catch(e) {
+      done(e);
+    }
+  });
 });
-it('eval 1+1', function(done) {
-  e1.promise(done, done);
+
+
+it('eval "function() {}" not abort', function(done) {
+  _eval('function() { return 1; }', function(e) {
+    try {
+      assert(e, 'must throw error');
+      done();
+    } catch(e) {
+      done(e);
+    }
+  });
 });
 
 
-var _end = deferred();
-th.on('end', function() {
-  if (success) _end.resolve();
-  else _end.reject(new Error('not end yet'));
-});
-it('thread stoped', function(done) {
-  _end.promise(done, done);
-});
-
+function _eval(code, cb) {
+  th.once('eval', function(r) {
+    if (r[0]) cb(r[0]);
+    else cb(null, r[1]);
+  });
+  th.send('eval', code);
+}
 
 
 });

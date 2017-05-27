@@ -73,18 +73,27 @@ void j_eval(const FunctionCallbackInfo<Value>& args) {
     } else {
       context = iso->GetCurrentContext();
     }
+    if (context.IsEmpty()) {
+      Nan::ThrowReferenceError("Could not instantiate context");
+      return;
+    }
 
+    TryCatch jtry;
     Local<String> filename = args[0].As<String>();
     Local<String> code = args[1].As<String>();
     ScriptOrigin origin(filename, offset);
     ScriptCompiler::Source source(code, origin);
+    THROW_WHEN_CAUGHT(jtry);
 
     Context::Scope context_scope(context);
     Local<UnboundScript> unbound = ScriptCompiler::CompileUnbound(iso, &source);
-    // 使用代码: 'function() {}' 会让进程崩溃
-    Local<Script> script = unbound->BindToCurrentContext();
+    THROW_WHEN_CAUGHT(jtry);
 
-    args.GetReturnValue().Set( script->Run() );
+    Local<Script> script = unbound->BindToCurrentContext();
+    Local<Value> result  = script->Run();
+    THROW_WHEN_CAUGHT(jtry);
+
+    args.GetReturnValue().Set(result);
   }
 }
 

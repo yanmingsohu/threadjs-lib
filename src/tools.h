@@ -36,6 +36,19 @@ struct RecvEventData;
   }
 
 
+// 当检查到运行的 v8 代码抛出异常则终止, 需要前置 TryCatch 实例
+#define THROW_WHEN_CAUGHT(_jtry) \
+  if (_jtry.HasCaught()) { \
+    if (jtry.HasTerminated()) { \
+      iso->CancelTerminateExecution(); \
+      Nan::ThrowError("Script execution interrupted."); \
+      return; \
+    } \
+    _jtry.ReThrow(); \
+    return; \
+  }
+
+
 // 只删除 uv_async_t 句柄, 且句柄中 data 为空
 #define DEL_UV_ASYNC(h) \
   if (h) { \

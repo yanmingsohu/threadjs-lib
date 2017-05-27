@@ -164,7 +164,7 @@ describe('http', function() {
 
   do_thread('http.get() - process shutdown !', url, function(buf) {
     console.log(buf)
-  }, SKIP);
+  });
 });
 
 
