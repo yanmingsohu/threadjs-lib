@@ -4,6 +4,7 @@ var fs        = require('fs');
 var thlib     = require('../');
 var deferred  = require('deferred');
 var assert    = require('assert');
+var crypto    = require('crypto');
 
 var fname     = __dirname + '/thread-native.js';
 var code      = fs.readFileSync(fname, 'utf8');
@@ -31,6 +32,24 @@ th.on('init_process', function() {
     },
   };
   th.notify(init_data);
+});
+
+
+var srcbase = 'D:/Nodejs_Projects/node/lib/'
+th.on('_require_file_', function(name) {
+  var code;
+  // DEBUG !
+  if (name === '_http_server') {
+    try {
+      code = fs.readFileSync(srcbase + name + '.js', 'utf8');
+    } catch(e) {
+      console.log('_require', e);
+    }
+  }
+  if (!code) {
+    code = process.binding("natives")[name];
+  }
+  th.notify(code);
 });
 
 
@@ -101,6 +120,38 @@ function eval_code(event_name, args, fn, tfn) {
 }
 
 
+//
+// 在自线程执行函数, 并等待结果返回
+//
+function only_eval(fn, args, cb) {
+  var name = fn.name || crypto.randomBytes(10).toString('base64');
+  th.send('eval_code', name);
+  th.send(name, {
+    name : name,
+    code : fn.toString(),
+    args : args,
+  });
+  th.once(name, function(ret) {
+    if (args.debug) console.log('only_eval() done');
+    if (ret[0]) return cb(ret[0]);
+    try {
+      cb(null, ret[1]);
+    } catch(e) {
+      cb(e);
+    }
+  });
+}
+
+
+function connect_config(debug, len) {
+  return {
+    msg   : crypto.randomBytes(len || 3000).toString('base64'),
+    port  : parseInt(10000 * Math.random() + 20000),
+    debug : debug || false,
+  };
+}
+
+
 th.on('error', function(e) {
   // console.log(e);
   result.reject(e);
@@ -168,12 +219,12 @@ describe('buffer', function() {
 });
 
 
-describe('dns', function() {
+describe.skip('dns', function() {
   var host = 'google.com';
   var dns = require('dns');
   var ip = {};
   // 同一个 ip 有多个 host 会让测试失败.
-  this.retries(4);
+  this.retries(2);
 
   dns.resolve(host, function(err, _ip) {
     ip.ip = _ip[0];
@@ -199,18 +250,6 @@ describe('fs', function() {
     var fs = require('fs');
     fs.readFile(filename, 'utf8', cb);
   });
-});
-
-
-describe('http', function() {
-  var url = 'http://www.sogou.com/';
-  var http = require('http');
-  var crypto = require('crypto');
-  var body = crypto.randomBytes(3000).toString('base64');
-
-  do_thread('get()', url, function(buf) {
-    console.log(buf)
-  }, SKIP);
 });
 
 
@@ -364,7 +403,7 @@ describe('os', function() {
 });
 
 
-describe('child_process', function() {
+describe.skip('child_process', function() {
   eval_code('exec()', 'ls', function(cmd, cb) {
     const exec = require('child_process').exec;
     exec('ls', cb);
@@ -391,14 +430,19 @@ describe('child_process', function() {
 
 
 describe('dgram', function() {
-  var crypto = require('crypto');
 
-  var d = {
-    msg  : crypto.randomBytes(3000).toString('base64'),
-    port : parseInt(10000 * Math.random() + 20000),
-    thread_server : true,
-  };
-  it('thread is client', function(done) {
+  //
+  // bug: 不启动定时器, 主线程的 client.send 会无法发送数据
+  // mocha 的问题? threadjs 的问题?
+  //
+  var tid;
+  it("start interval for Client", function() {
+    tid = setInterval(function() {}, 100);
+  });
+
+
+  it('thread create client', function(done) {
+    var d = connect_config();
     server(d, function(err, ret) {
       if (err) return done(err);
       try {
@@ -409,46 +453,30 @@ describe('dgram', function() {
       }
     });
     // client 返回什么不重要
-    var name = 'createUdpSever';
-    th.send('eval_code', name);
-    th.send(name, {
-      name : name,
-      code : client.toString(),
-      args : d,
+    only_eval(client, d, function(e) {
+      if (e) done(e);
     });
   });
 
 
-  var d2 = {
-    msg  : crypto.randomBytes(3000).toString('base64'),
-    port : parseInt(10000 * Math.random() + 20000),
-    thread_server : false,
-  };
-  it.skip('thread is server', function(done) {
-    // this.timeout(15e3)
+  it('thread create server', function(done) {
+    var d = connect_config();
     th.once('udpserverbind', function() {
-      // console.log('start client');
-      client(d2, function(e) {
+      d.debug && console.log('2. start client');
+      client(d, function(e) {
         if (e) done(e);
       });
     });
-    var name = 'createUdpClient';
-    th.send('eval_code', name);
-    th.send(name, {
-      name : name,
-      code : server.toString(),
-      args : d2,
+    only_eval(server, d, function(e, ret) {
+      if (e) return done(e);
+      assert.deepEqual(ret, d.msg);
+      done();
     });
-    th.once(name, function(ret) {
-      // console.log(ret, '###########')
-      if (ret[0]) return done(ret[0]);
-      try {
-        assert(ret[1] === d.msg);
-        done();
-      } catch(e) {
-        done(e);
-      }
-    });
+  });
+
+
+  it('clear interval', function() {
+    clearInterval(tid);
   });
 
 
@@ -461,53 +489,75 @@ describe('dgram', function() {
       server.close();
     });
     server.on('message', (msg, rinfo) => {
-      cb(null, msg.toString());
-      // console.log('server recv');
+      d.debug && console.log('4.2 server recv');
+      cb(null, msg.toString('base64'));
       server.close();
     });
     server.bind(d.port, function() {
+      d.debug && console.log('1. server bind ok');
       try {
-        // console.log('server bind ok');
         thread.send('udpserverbind');
       } catch(e) {}
     });
   }
 
+
   function client(d, cb) {
     const dgram = require('dgram');
     const Buffer = require('buffer').Buffer;
-    const message = Buffer.from(d.msg);
+    const message = Buffer.from(d.msg, 'base64');
     const client = dgram.createSocket('udp4');
 
-    // console.log('client begin send')
+    d.debug && console.log('3. client begin send')
     client.send(message, d.port, '127.0.0.1', (err) => {
       if (err) cb(err);
       else cb(null, message.toString());
       client.close();
-      // console.log('client send');
+      d.debug && console.log('4.1 client send');
     });
   }
 });
 
 
-describe.skip('net', function() {
-  var crypto = require('crypto');
-  var d = {
-    msg  : crypto.randomBytes(3000).toString('base64'),
-    port : parseInt(10000 * Math.random() + 20000),
-    thread_server : true,
-  };
-  eval_code('thread is server', d, test);
+describe('net', function() {
 
-  var d2 = {
-    msg  : crypto.randomBytes(3000).toString('base64'),
-    port : parseInt(10000 * Math.random() + 20000),
-    thread_server : false,
-  };
-  eval_code('thread is client', d2, test);
+  it("thread create Server", function(done) {
+    var d = connect_config();
+    th.once('tcpserverbind', function() {
+      d.debug && console.log('Main: start client');
+      client(d, function(err, data) {
+        try {
+          assert.deepEqual(data, d.msg);
+          done();
+        } catch(e) {
+          done(e);
+        }
+      });
+    });
+    only_eval(server, d, function(e) {
+      if (e) return done(e);
+    });
+  });
 
-  function server() {
+
+  it('thread start Client', function(done) {
+    var d = connect_config();
+    server(d, function(err, ret) {
+      if (err) return done(err);
+      if (d.debug) console.log('Main: server shutdown');
+    });
+    only_eval(client, d, function(e, ret) {
+      if (e) return done(e);
+      assert.deepEqual(ret, d.msg);
+      done();
+    });
+  });
+
+
+  function server(d, cb) {
+    var net = require('net');
     const server = net.createServer((socket) => {
+      d.debug && console.log('server send data over');
       socket.end(d.msg);
       cb(null, d.msg);
       server.close();
@@ -515,25 +565,139 @@ describe.skip('net', function() {
       cb(err);
     });
 
-    server.listen(d.port);
+    server.listen(d.port, function() {
+      d.debug && console.log('server listening');
+      try {
+        thread.send('tcpserverbind');
+      } catch(e) {}
+    });
   }
 
-  function client() {
+
+  function client(d, cb) {
+    var Buffer = require('buffer').Buffer;
+    var net = require('net');
     var bufs = [];
+
     const client = net.createConnection(d, () => {
       //'connect' listener
-      console.log('connected to server!');
-      client.write('world!\r\n');
+      d.debug && console.log('client connected to server');
     });
     client.on('data', (data) => {
       bufs.push(data);
     });
     client.on('end', () => {
+      d.debug && console.log('client recv data over');
       var msg = Buffer.concat(bufs).toString();
-      client.end();
       cb(null, msg);
+      client.end();
     });
     client.on('error', cb);
+    d.debug && console.log('client created');
+  }
+});
+
+
+describe('http', function() {
+  this.timeout(60e3);
+
+  var tid;
+  it("start interval for Client", function() {
+    tid = setInterval(function() {
+      console.log('#HTTP.1');
+      th.send('interval');
+    }, 1000);
+  });
+
+  //
+  // bug: 这个测试让进程崩溃
+  //
+  it.skip('thread start Client', function(done) {
+    var d = connect_config(true);
+    server(d, function(err) {
+      if (err) done(err);
+    });
+    only_eval(client, d, function(err, ret) {
+      if (err) return done(err);
+      assert.deepEqual(ret, d.msg);
+    });
+  });
+
+
+  it("thread start Server", function(done) {
+    var d = connect_config(true);
+    th.once('http-serverbind', function() {
+      client(d, function(e, ret) {
+        if (e) return done(e);
+        assert(ret, d.msg);
+      });
+    });
+    only_eval(server, d, function(err, ret) {
+      if (err) return done(err);
+    });
+  });
+
+
+  function client(d, cb) {
+    var http = require('http');
+    var buffer = require('buffer').Buffer;
+    var opt = {
+      host : '127.0.0.1',
+      port : d.port,
+    };
+
+    var req = http.request(opt, function(resp) {
+      if (d.debug) console.log('http client connected');
+      var bufs = [];
+      resp.on('data', function(d) {
+        bufs.push(d);
+        if (d.debug) console.log('http client recv', bufs.length);
+      });
+      resp.on('end', function() {
+        if (d.debug) console.log('http client end');
+        var buf = buffer.concat(bufs).toString();
+        cb(null, buf);
+      });
+      resp.on('error', cb);
+    });
+
+    req.on('error', cb);
+    req.end();
+    if (d.debug) console.log('http client start', d.port);
+  }
+
+
+  function server(d, cb) {
+    var http = require('http');
+    var buffer = require('buffer').Buffer;
+
+    var server = http.createServer(function(req, resp) {
+      if (d.debug) console.log('http server get require');
+      resp.end(d.msg);
+      server.close(function() {
+        if (d.debug) console.log('http server closed');
+      });
+      cb(null, d.msg);
+    });
+
+    // DEBUG
+    server.on('connection', function(socket) {
+      try {
+        if (d.debug) console.log('[http] socket connect');
+        // socket.on('data', function(d) {
+        //   if (d.debug) console.log('[http] socket recv', d);
+        // });
+      } catch(e) {
+        console.log(e, 'connect');
+      }
+    });
+
+    server.listen(d.port, function() {
+      if (d.debug) console.log('http server listened', d.port);
+      try {
+        thread.send('http-serverbind');
+      } catch(e) {}
+    });
   }
 });
 

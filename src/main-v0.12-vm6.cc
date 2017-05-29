@@ -377,6 +377,7 @@ static void do_script(void *arg) {
       code = 8;
       while (data->running) {
         ReqData::TimeHandle th(data);
+
         more = uv_run(data->sub_loop, UV_RUN_ONCE);
 
         if (RecvEventData::hasEvent(main_event)) {

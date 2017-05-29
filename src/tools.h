@@ -302,12 +302,13 @@ public:
     write_key(k);
     *buf << '"';
     for (int i=0; v[i]; ++i) {
-      if (v[i] == '\n') {
-        *buf << "\\n";
-      } else if (v[i] == '\r') {
-        *buf << "\\r";
-      } else {
-        *buf << v[i];
+      switch (v[i]) {
+        case '\n': *buf << "\\n"; break;
+        case '\r': *buf << "\\r"; break;
+        case '\"': *buf << "\\\""; break;
+        case '\\': *buf << "\\\\"; break;
+        default:
+          *buf << v[i];
       }
     }
     *buf << '"';

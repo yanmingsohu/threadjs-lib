@@ -27,13 +27,28 @@ var process = _global.process = {
           arg.push(arguments[i]);
         }
     }
+
     setImmediate(function() {
       try {
         fn.apply(null, arg);
       } catch(e) {
+        console.log('[nextTick]', e, fn.toString());
         thread.emit('error', e);
       }
     });
+  },
+
+  // 解释: https://zhuanlan.zhihu.com/p/26071124
+  // 用 internal/process/next_tick 初始化
+  _setupNextTick: function(_tickCallback, _runMicrotasks) {
+    delete process._setupNextTick;
+    var tickInfo = [0, 0];
+    var runMicrotasks = {
+      // !! cpp 实现 runMicrotasks()
+      runMicrotasks : thread.runMicrotasks
+    };
+    console.log('#_setupNextTick()');
+    return tickInfo;
   },
 
   binding : function(name) {
@@ -75,7 +90,8 @@ Extends(new EventEmitter(), process);
 function __none() {}
 
 thread.on('error', function(e) {
-  console.log('THREAD', e);
+  // console cannot print Error object right.
+  console.log('THREAD', e.name, e.stack);
 });
 
 var context = thread.create_context();
@@ -153,7 +169,9 @@ function _require(name) {
   if (module)
     return module.exports;
 
-  var code = process._natives[name];
+  // console.log('???', name)
+  // var code = process._natives[name];
+  var code = thread.wait('_require_file_', name);
   if (!code)
     throw new Error('module not found "' + name + '"');
 
@@ -209,7 +227,7 @@ function _module_not_support(name) {
 //
 // 这些模块要么导致进程崩溃, 要么无法使用
 //
-_module_not_support('http');
+// _module_not_support('http');
 
 
 var Module = require('module');
@@ -226,38 +244,6 @@ thread.send('ready');
 //==============================================================================
 
 
-thread.on('http.get()', function(url) {
-  try {
-    var http = require('http');
-    var buffer = require('buffer').Buffer;
-    var urllib = require('url');
-
-    var urldata = urllib.parse(url);
-    var req = http.request(urldata, function(resp) {
-      var bufs = [];
-      resp.on('data', function(d) {
-        bufs.push(d);
-      });
-      resp.on('end', function() {
-        var buf = buffer.concat(bufs);
-        thread.send('http.get()', [null, buf]);
-      });
-      resp.on('error', function(e) {
-        thread.send('http.get()', [ERR(e)]);
-      });
-    });
-
-    req.on('error', function(e) {
-      thread.send('http.get()', [ERR(e)]);
-    });
-
-    req.end();
-  } catch(e) {
-    thread.send('http.get()', [ERR(e)]);
-  }
-});
-
-
 //
 // 通用测试工具
 //
@@ -265,6 +251,7 @@ thread.on('eval_code', function(event_name) {
   // fn : Function(args, cb)
   thread.once(event_name, function(r) {
     try {
+      if (r.debug) console.log('eval_code() start', event_name);
       var context = thread.create_context();
       context.require = require;
       context.process = process;
@@ -280,4 +267,17 @@ thread.on('eval_code', function(event_name) {
       thread.send(r.name, [ERR(e)]);
     }
   });
+});
+
+
+setInterval(function() {
+  console.log('#Thread.2');
+}, 1000);
+thread.on('interval', function() {
+  console.log('#interval.3');
+});
+
+process.nextTick(function() {
+  var p = require('process');
+  require('assert')(p === process, 'not process');
 });
