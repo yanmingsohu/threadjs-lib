@@ -150,6 +150,11 @@ void j_binding(const FunctionCallbackInfo<Value>& args) {
 }
 
 
+void j_RunMicrotasks(const FunctionCallbackInfo<Value>& args) {
+  args.GetIsolate()->RunMicrotasks();
+}
+
+
 //
 // 向另一个线程发送数据
 //
@@ -323,6 +328,7 @@ static void do_script(void *arg) {
     CREATE_ISOLATE(isolate);
     AutoDispose<Isolate> freeiso(isolate);
     Isolate::Scope isolate_scope(isolate);
+    isolate->SetAutorunMicrotasks(false);
     //
     // Fatal error in heap setup
     // Allocation failed - process out of memory
@@ -359,6 +365,8 @@ static void do_script(void *arg) {
     set_method(isolate, j_context, "_eval", j_eval, data.get());
     set_method(isolate, j_context, "_create_context", j_create_context, data.get());
     set_method(isolate, j_context, "_binding", j_binding, data.get());
+    set_method(isolate, j_context, "_runMicrotasks", j_RunMicrotasks, data.get());
+
 
     code = 5;
     LocalPoint<TimerPool> timepool(new TimerPool(loop));
@@ -379,10 +387,12 @@ static void do_script(void *arg) {
         ReqData::TimeHandle th(data);
 
         more = uv_run(data->sub_loop, UV_RUN_ONCE);
-
+        
         if (RecvEventData::hasEvent(main_event)) {
           uv_async_send(main_event);
         }
+
+        isolate->RunMicrotasks();
 
         if (data->terminated) {
           break;

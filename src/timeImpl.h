@@ -11,6 +11,7 @@ using namespace v8;
 class TimerPool;
 typedef int32_t timer_id;
 typedef SaveCallFunction TimerCall;
+#define TIME_OFFSET(a) (a+4) //ms
 
 
 class Timer {

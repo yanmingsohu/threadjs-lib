@@ -144,7 +144,7 @@ static inline void _j_time(const FunctionCallbackInfo<Value>& args,
 void j_setTimeout(const FunctionCallbackInfo<Value>& args) {
   INIT_ISOLATE_FCI(iso, args);
   CHECK_TYPE(Uint32, iso, args[1], "delay milliseconds is null");
-  _j_time(args, iso, args[1]->ToUint32()->Value(), 0);
+  _j_time(args, iso, TIME_OFFSET(args[1]->ToUint32()->Value()), 0);
 }
 
 
@@ -152,7 +152,7 @@ void j_setInterval(const FunctionCallbackInfo<Value>& args) {
   INIT_ISOLATE_FCI(iso, args);
   CHECK_TYPE(Uint32, iso, args[1], "repeat milliseconds is null");
   uint64_t repeat = args[1]->ToUint32()->Value();
-  _j_time(args, iso, repeat, repeat);
+  _j_time(args, iso, TIME_OFFSET(repeat), repeat);
 }
 
 

@@ -11,7 +11,6 @@ var code      = fs.readFileSync(fname, 'utf8');
 
 
 var th = thlib.create(code, fname, thlib.default_lib);
-var result = deferred();
 var SKIP = function() { return true };
 var ready = false;
 
@@ -152,18 +151,49 @@ function connect_config(debug, len) {
 }
 
 
+//==========================================================================
+
+
+var result = deferred();
 th.on('error', function(e) {
   // console.log(e);
   result.reject(e);
 });
-
-
 th.on('ready', function() {
   ready = true;
   result.resolve();
 });
 it('ready', function(done) {
   result.promise(done, done);
+});
+
+
+describe.skip('Task Queue', function() {
+  eval_code('right => 3 4 6 8 | 7 5 2 1', 0, function(_, cb) {
+    var queue = [];
+    setImmediate(function(){ push(1) });
+    setTimeout(function(){ push(2); }, 0);
+
+    new Promise(function(resolve){
+      push(3);
+      resolve();
+      push(4);
+    }).then(function(){ push(5); });
+
+    push(6);
+    process.nextTick(function(){ push(7); });
+    process.nextTick(function(){ push(9); });
+    process.nextTick(function(){ push(10); });
+    push(8);
+
+    function push(i) {
+      queue.push(i);
+      console.log('#', i, queue.length);
+      if (queue.length == 8) {
+        cb(null, queue);
+      }
+    }
+  });
 });
 
 
@@ -599,7 +629,7 @@ describe('net', function() {
 
 
 describe('http', function() {
-  this.timeout(60e3);
+  // this.timeout(60e3);
 
   var tid;
   it("start interval for Client", function() {
@@ -684,9 +714,9 @@ describe('http', function() {
     server.on('connection', function(socket) {
       try {
         if (d.debug) console.log('[http] socket connect');
-        // socket.on('data', function(d) {
-        //   if (d.debug) console.log('[http] socket recv', d);
-        // });
+        socket.on('data', function(d) {
+          if (d.debug) console.log('[http] socket recv', d);
+        });
       } catch(e) {
         console.log(e, 'connect');
       }

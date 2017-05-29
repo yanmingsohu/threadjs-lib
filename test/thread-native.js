@@ -8,6 +8,7 @@ var _global   = {};
 var _cache    = {};
 var require   = _require;
 var init_data = thread.wait('init_process');
+var tick_que  = [];
 
 var process = _global.process = {
   pid        : thread.threadId,
@@ -28,20 +29,32 @@ var process = _global.process = {
         }
     }
 
-    setImmediate(function() {
+    if (tick_que.length == 0) {
+      setImmediate(function() {
+        while (tick_que.length > 0) {
+          tick_que.shift()();
+        }
+        thread.runMicrotasks();
+      });
+    }
+
+    tick_que.push(function() {
       try {
         fn.apply(null, arg);
       } catch(e) {
-        console.log('[nextTick]', e, fn.toString());
-        thread.emit('error', e);
+        // console.log('[nextTick]', e, fn.toString());
+        process.emit('error', e);
       }
     });
   },
 
-  // 解释: https://zhuanlan.zhihu.com/p/26071124
+  // 解释: https://zhuanlan.zhihu.com/p/26071124,
+  //      https://www.zhihu.com/question/36972010
   // 用 internal/process/next_tick 初始化
   _setupNextTick: function(_tickCallback, _runMicrotasks) {
     delete process._setupNextTick;
+    var kIndex = 0;
+    var kLength = 1;
     var tickInfo = [0, 0];
     var runMicrotasks = {
       // !! cpp 实现 runMicrotasks()
@@ -49,6 +62,14 @@ var process = _global.process = {
     };
     console.log('#_setupNextTick()');
     return tickInfo;
+  },
+
+  _promiseRejectEvent : {
+    'unhandled' : 0, // v8::kPromiseRejectWithNoHandler
+    'handled'   : 1, // v8::kPromiseHandlerAddedAfterReject
+  },
+
+  _setupPromises: function(fn) {
   },
 
   binding : function(name) {
@@ -98,6 +119,8 @@ var context = thread.create_context();
 context.process = process;
 context.global  = _global;
 context.console = console;
+context.setTimeout = setTimeout;
+context.setImmediate = setImmediate;
 context.DTRACE_NET_SERVER_CONNECTION = __none;
 context.DTRACE_NET_STREAM_END = __none;
 context.DTRACE_HTTP_SERVER_REQUEST = __none;
@@ -239,7 +262,7 @@ require = function(id) {
     return _require(id);
   }
 }
-
+// require('internal/process/next_tick').setup();
 thread.send('ready');
 //==============================================================================
 
@@ -252,14 +275,14 @@ thread.on('eval_code', function(event_name) {
   thread.once(event_name, function(r) {
     try {
       if (r.debug) console.log('eval_code() start', event_name);
-      var context = thread.create_context();
-      context.require = require;
-      context.process = process;
-      context.console = console;
-      context.thread  = thread;
-      context.setTimeout = setTimeout;
+      var _context = thread.create_context();
+      _context.require = require;
+      _context.thread  = thread;
+      for (var n in context) {
+        _context[n] = context[n];
+      }
 
-      var fn = thread.eval('(' + r.code + ')', r.name, 0, context);
+      var fn = thread.eval('(' + r.code + ')', r.name, 0, _context);
       fn(r.args, function(err, ret) {
         thread.send(r.name, [ERR(err), ret]);
       });
@@ -270,14 +293,14 @@ thread.on('eval_code', function(event_name) {
 });
 
 
-setInterval(function() {
-  console.log('#Thread.2');
-}, 1000);
-thread.on('interval', function() {
-  console.log('#interval.3');
-});
-
-process.nextTick(function() {
-  var p = require('process');
-  require('assert')(p === process, 'not process');
-});
+// setInterval(function() {
+//   console.log('#Thread.2');
+// }, 1000);
+// thread.on('interval', function() {
+//   console.log('#interval.3');
+// });
+//
+// process.nextTick(function() {
+//   var p = require('process');
+//   require('assert')(p === process, 'not process');
+// });
