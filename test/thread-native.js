@@ -16,21 +16,13 @@ var process = _global.process = {
   _natives   : init_data.natives,
 
   nextTick : function(fn, a, b, c) {
-    var arg;
-    switch(arguments.length) {
-      case 1: arg = []; break;
-      case 2: arg = [a]; break;
-      case 3: arg = [a,b]; break;
-      case 4: arg = [a,b,c]; break;
-      default:
-        arg = [];
-        for (var i=1; i<arguments.length; ++i) {
-          arg.push(arguments[i]);
-        }
+    var arg = [];
+    for (var i=1; i<arguments.length; ++i) {
+      arg.push(arguments[i]);
     }
 
     if (tick_que.length == 0) {
-      setImmediate(function() {
+      _next_tick(function() {
         while (tick_que.length > 0) {
           tick_que.shift()();
         }

@@ -4,30 +4,6 @@
 #include "tools.h"
 
 
-void j_setTimeout(const FunctionCallbackInfo<Value>& args);
-void j_setInterval(const FunctionCallbackInfo<Value>& args);
-void j_setImmediate(const FunctionCallbackInfo<Value>& args);
-void j_clear_time(const FunctionCallbackInfo<Value>& args);
-
-
-void InitTimerFunctions(Isolate *isolate,
-      TimerPool *tp, uv_async_t *event_target) {
-  Local<Context> context = isolate->GetEnteredContext();
-  Local<Object> global = context->Global();
-
-  global->SetHiddenValue(
-    String::NewFromUtf8(isolate, "event_target"),
-    External::New(isolate, event_target) );
-
-  set_method(isolate, global, "setTimeout",     j_setTimeout,   tp);
-  set_method(isolate, global, "setInterval",    j_setInterval,  tp);
-  set_method(isolate, global, "setImmediate",   j_setImmediate, tp);
-  set_method(isolate, global, "clearTimeout",   j_clear_time,   tp);
-  set_method(isolate, global, "clearInterval",  j_clear_time,   tp);
-  set_method(isolate, global, "clearImmediate", j_clear_time,   tp);
-}
-
-
 static void timeout_one_cb(uv_timer_t* handle) {
   Timer* t = reinterpret_cast<Timer*>(handle->data);
   t->call();
@@ -41,7 +17,15 @@ static void timeout_repeat_cb(uv_timer_t* handle) {
 }
 
 
+static void recv_tick_event(uv_async_t* handle) {
+  TimerPool *tpool = reinterpret_cast<TimerPool*>(handle->data);
+  tpool->do_tick();
+}
+
+
 TimerPool::TimerPool(uv_loop_t *l) : id(1), loop(l) {
+  tick_event.data = this;
+  uv_async_init(loop, &tick_event, recv_tick_event);
 }
 
 
@@ -74,6 +58,27 @@ Timer* TimerPool::pop(tp_key key) {
 }
 
 
+void TimerPool::push_tick(timer_id id) {
+  tick_queue.push_back(id);
+  uv_async_send(&tick_event);
+}
+
+
+void TimerPool::do_tick() {
+  while (!tick_queue.empty()) {
+    timer_id id = tick_queue.back();
+    tick_queue.pop_back();
+
+    Timer * t = pop(id);
+    if (t) {
+      t->call(false);
+      t->setPool(0);
+      delete t;
+    }
+  }
+}
+
+
 Timer::Timer(uv_loop_t *loop, TimerCall &cb, timer_id _i)
     : _id(_i), fn(cb), pool(0) {
   handle.data = this;
@@ -82,7 +87,7 @@ Timer::Timer(uv_loop_t *loop, TimerCall &cb, timer_id _i)
 
 
 Timer::~Timer() {
-  stop();
+  uv_timer_stop(&handle);
   if (pool && _id) {
     pool->pop(_id);
   }
@@ -99,7 +104,8 @@ timer_id Timer::id() {
 }
 
 
-void Timer::call() {
+void Timer::call(bool call_tick) {
+  if (pool && call_tick) pool->do_tick();
   fn.call();
 }
 
@@ -113,13 +119,8 @@ void Timer::start(uint64_t timeout, uint64_t repeat) {
 }
 
 
-void Timer::stop() {
-  uv_timer_stop(&handle);
-}
-
-
 static inline void _j_time(const FunctionCallbackInfo<Value>& args,
-    Isolate *iso, uint64_t timeout, uint64_t repeat) {
+    Isolate *iso, uint64_t timeout, uint64_t repeat, uint8_t mask=0) {
   CHECK_TYPE(Function, iso, args[0], "callback function is null");
   GET_FCI_EXTERNAL_ATTR(args, _ex, TimerPool, times);
 
@@ -127,12 +128,18 @@ static inline void _j_time(const FunctionCallbackInfo<Value>& args,
   Local<Object> global = context->Global();
 
   Local<External> event_target_warp =
-    global->GetHiddenValue(String::NewFromUtf8(iso, "event_target")).As<External>();
+    global->GetHiddenValue(
+      String::NewFromUtf8(iso, "event_target")).As<External>();
   uv_async_t *event_target = (uv_async_t *) event_target_warp->Value();
 
   TimerCall scb(args[0].As<Function>(), iso, args.This(), event_target);
   Timer* timer = times->createTimer(scb);
-  timer->start(timeout, repeat);
+
+  if (mask & TIME_TICK) {
+    times->push_tick(timer->id());
+  } else {
+    timer->start(timeout, repeat);
+  }
 
   Local<Object> ret = Object::New(iso);
   ret->Set(V8_CHAR(iso, "name"), V8_CHAR(iso, "timeid"));
@@ -162,6 +169,12 @@ void j_setImmediate(const FunctionCallbackInfo<Value>& args) {
 }
 
 
+void j_next_tick(const FunctionCallbackInfo<Value>& args) {
+  INIT_ISOLATE_FCI(iso, args);
+  _j_time(args, iso, 0, 0, TIME_TICK);
+}
+
+
 void j_clear_time(const FunctionCallbackInfo<Value>& args) {
   INIT_ISOLATE_FCI(iso, args);
   if (args[0]->IsObject()) {
@@ -171,9 +184,33 @@ void j_clear_time(const FunctionCallbackInfo<Value>& args) {
       GET_FCI_EXTERNAL_ATTR(args, _ex, TimerPool, times);
       Timer *t = times->pop(id);
       if (t) {
+        // 减少释放内存的步骤, 不能把这一步放入 pop()
+        // 因为 Timer 还需要 pool 做一些事情.
         t->setPool(0);
         delete t;
       }
     }
   }
+}
+
+
+void InitTimerFunctions(Isolate *isolate,
+      TimerPool *tp, uv_async_t *event_target) {
+  Local<Context> context = isolate->GetEnteredContext();
+  Local<Object> global = context->Global();
+
+  global->SetHiddenValue(
+    String::NewFromUtf8(isolate, "event_target"),
+    External::New(isolate, event_target) );
+
+#define ADD_M(name, fn) \
+  set_method(isolate, global, name, fn, tp);
+
+  ADD_M("setTimeout",     j_setTimeout);
+  ADD_M("setInterval",    j_setInterval);
+  ADD_M("setImmediate",   j_setImmediate);
+  ADD_M("clearTimeout",   j_clear_time);
+  ADD_M("clearInterval",  j_clear_time);
+  ADD_M("clearImmediate", j_clear_time);
+  ADD_M("_next_tick",     j_next_tick);
 }

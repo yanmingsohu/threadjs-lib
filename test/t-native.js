@@ -96,7 +96,7 @@ function eval_code(event_name, args, fn, tfn) {
     code : (tfn || fn).toString(),
     args : args,
   };
-  var actual;
+  var expected;
   var af = deferred();
   it('    Prepare', function(done) {
     if (!ready) this.skip();
@@ -105,16 +105,16 @@ function eval_code(event_name, args, fn, tfn) {
       if (err) {
         done(err);
       } else {
-        actual = ret;
+        expected = ret;
         th.send('eval_code', event_name);
         done();
       }
     });
   });
-  return do_thread(event_name, send_data, function(expected) {
+  return do_thread(event_name, send_data, function(actual) {
     assert.deepEqual(actual, expected);
   }, function() {
-    return !actual;
+    return !expected;
   });
 }
 
@@ -169,27 +169,28 @@ it('ready', function(done) {
 
 
 describe.skip('Task Queue', function() {
-  eval_code('right => 3 4 6 8 | 7 5 2 1', 0, function(_, cb) {
+  eval_code('time, tick, promise', 0, function(_, cb) {
     var queue = [];
-    setImmediate(function(){ push(1) });
-    setTimeout(function(){ push(2); }, 0);
+    setImmediate(function(){ push("1 Immediate") });
+    setTimeout(function(){ push("2 time"); }, 0);
+    setImmediate(function(){ push("B Immediate") });
 
     new Promise(function(resolve){
       push(3);
       resolve();
       push(4);
-    }).then(function(){ push(5); });
+    }).then(function(){ push('5 promise'); });
 
     push(6);
-    process.nextTick(function(){ push(7); });
-    process.nextTick(function(){ push(9); });
-    process.nextTick(function(){ push(10); });
+    process.nextTick(function(){ push('7 next-tick'); });
+    process.nextTick(function(){ push('9 next-tick'); });
+    process.nextTick(function(){ push('A next-tick'); });
     push(8);
 
     function push(i) {
       queue.push(i);
-      console.log('#', i, queue.length);
-      if (queue.length == 8) {
+      console.log('#', queue.length, '\t>', i);
+      if (queue.length == 11) {
         cb(null, queue);
       }
     }
@@ -249,7 +250,7 @@ describe('buffer', function() {
 });
 
 
-describe.skip('dns', function() {
+describe('dns', function() {
   var host = 'google.com';
   var dns = require('dns');
   var ip = {};
@@ -433,7 +434,7 @@ describe('os', function() {
 });
 
 
-describe.skip('child_process', function() {
+describe('child_process', function() {
   eval_code('exec()', 'ls', function(cmd, cb) {
     const exec = require('child_process').exec;
     exec('ls', cb);
@@ -466,8 +467,8 @@ describe('dgram', function() {
   // mocha 的问题? threadjs 的问题?
   //
   var tid;
-  it("start interval for Client", function() {
-    tid = setInterval(function() {}, 100);
+  it("start interval for Client [BUG]", function() {
+    tid = setTimeout(function() {}, 100);
   });
 
 
@@ -628,16 +629,34 @@ describe('net', function() {
 });
 
 
-describe('http', function() {
-  // this.timeout(60e3);
-
+describe.skip('http', function() {
   var tid;
   it("start interval for Client", function() {
-    tid = setInterval(function() {
-      console.log('#HTTP.1');
-      th.send('interval');
+    tid = setTimeout(function() {
+      // console.log('#HTTP.1');
+      // th.send('interval');
     }, 1000);
   });
+
+
+  it.skip('code work in main', function(done) {
+    var d = connect_config(true);
+    var r1;
+    server(d, function(e, _r1) {
+      if (e) return done(e);
+      r1 = _r1;
+    });
+    client(d, function(e, r2) {
+      if (e) return done(e);
+      try {
+        done();
+        assert.deepEqual(r2, r1);
+      } catch(e) {
+        done(e);
+      }
+    });
+  });
+
 
   //
   // bug: 这个测试让进程崩溃
@@ -654,6 +673,7 @@ describe('http', function() {
   });
 
 
+  // this.timeout(60e3);
   it("thread start Server", function(done) {
     var d = connect_config(true);
     th.once('http-serverbind', function() {
@@ -677,14 +697,14 @@ describe('http', function() {
     };
 
     var req = http.request(opt, function(resp) {
-      if (d.debug) console.log('http client connected');
+      if (d.debug) console.log('[http] client connected');
       var bufs = [];
       resp.on('data', function(d) {
         bufs.push(d);
-        if (d.debug) console.log('http client recv', bufs.length);
+        if (d.debug) console.log('[http] client recv', bufs.length);
       });
       resp.on('end', function() {
-        if (d.debug) console.log('http client end');
+        if (d.debug) console.log('[http] client end');
         var buf = buffer.concat(bufs).toString();
         cb(null, buf);
       });
@@ -693,7 +713,7 @@ describe('http', function() {
 
     req.on('error', cb);
     req.end();
-    if (d.debug) console.log('http client start', d.port);
+    if (d.debug) console.log('[http] client start', d.port);
   }
 
 
@@ -702,10 +722,10 @@ describe('http', function() {
     var buffer = require('buffer').Buffer;
 
     var server = http.createServer(function(req, resp) {
-      if (d.debug) console.log('http server get require');
+      if (d.debug) console.log('[http] server get require');
       resp.end(d.msg);
       server.close(function() {
-        if (d.debug) console.log('http server closed');
+        if (d.debug) console.log('[http] server closed');
       });
       cb(null, d.msg);
     });
@@ -713,9 +733,17 @@ describe('http', function() {
     // DEBUG
     server.on('connection', function(socket) {
       try {
-        if (d.debug) console.log('[http] socket connect');
-        socket.on('data', function(d) {
-          if (d.debug) console.log('[http] socket recv', d);
+        if (d.debug) {
+          console.log('[http] server socket connect');
+          console.log('data listener:',
+            socket.listenerCount('data'),
+            socket.getMaxListeners() );
+        }
+        socket.prependListener('data', function(d) {
+          if (d.debug) console.log('[http] server socket recv', d);
+        });
+        socket.on('error', function(e) {
+          console.log('Fail', e.stack);
         });
       } catch(e) {
         console.log(e, 'connect');
@@ -723,7 +751,10 @@ describe('http', function() {
     });
 
     server.listen(d.port, function() {
-      if (d.debug) console.log('http server listened', d.port);
+      if (d.debug) {
+        console.log('[http] server listened', server.address());
+        console.log('http://127.0.0.1:' + d.port);
+      }
       try {
         thread.send('http-serverbind');
       } catch(e) {}
