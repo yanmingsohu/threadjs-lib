@@ -11,7 +11,6 @@ Nodejs 多线程 / Nodejs Mulit Thread
 * 使用 `npm test` 进行测试, 需要全局安装 `mocha`
 * 可以在子线程中运行 nodejs 导出的本机方法
 
-!! 一个线程崩溃不影响其他线程
 
 > `npm start` 会启动一个命令行模式的线程
 > 输入 js 代码可以立即在线程中运行查看结果

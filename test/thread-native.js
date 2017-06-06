@@ -20,11 +20,14 @@ thread.on('eval_code', function(event_name) {
   thread.once(event_name, function(r) {
     try {
       if (r.debug) console.log('eval_code() start', event_name);
+      var timers = require('timers');
       var _context = thread.create_context();
       _context.require = require;
       _context.thread  = thread;
       _context.console = console;
       _context.process = process;
+      _context.setTimeout = timers.setTimeout;
+      _context.setImmediate = timers.setImmediate;
 
       var fn = thread.eval('(' + r.code + ')', r.name, 0, _context);
       fn(r.args, function(err, ret) {
