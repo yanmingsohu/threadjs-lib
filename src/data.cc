@@ -16,6 +16,7 @@ ReqData::~ReqData() {
   DEL_ARRAY(filename);
   DEL_UV_HANDLE_RECV_EVENT(sub_event);
   DEL_LOOP(sub_loop);
+  DEL_ARRAY(boot_node_file);
   main_iso = 0;
   main_loop = 0;
   // printf("!~ free ReqDAta");

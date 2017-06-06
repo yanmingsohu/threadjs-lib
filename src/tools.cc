@@ -16,6 +16,7 @@ void donothing_closed_cb(uv_handle_t* handle) {
 // CACHE_V8_ERR_SEND_EVNET() 放在头文件里调用会无法编译
 //
 void SaveCallFunction::call() {
+  HandleScope handle_scope(iso);
   Local<Function> f = Nan::New(fn);
   Local<Object>   c = Nan::New(co);
 

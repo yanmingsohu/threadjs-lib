@@ -17,13 +17,6 @@ Nodejs 多线程 / Nodejs Mulit Thread
 > 输入 js 代码可以立即在线程中运行查看结果
 
 
-编译
-=====
-
-本项目使用默认 node 程序编译通过, 但缺少功能, 若需要完整的功能, 则克隆 [项目](https://github.com/yanmingsohu/node.git), 并编译安装; 在安装 threadjs-lib 前设置 NODE_DIR 环境变量为 node.git 的下载目录;
-
-(*1*) 有该标识的函数需要这样编译方可使用.
-
 
 主线程中的 Api / Main thread Usage
 ==================================
@@ -31,171 +24,212 @@ Nodejs 多线程 / Nodejs Mulit Thread
 > 下文中的数据, 即消息中携带的数据
 
 
-```js
-var thlib = require('threadjs-lib');
+## var thlib = require('threadjs-lib');
 
-//
-// 创建代码模板, 方便进行 js 代码的组装
-// code 中是 js 脚本, 并且有变量绑定 ${name}
-// name 变量必须在 config 中设置并被 config.name 的值替换
-//
-var tpl = thlib.code_template(code, config);
+  引入库
 
-//
-// 设置绑定变量的值
-//
-tpl.set(bind_name, value);
 
-//
-// 将代码模板使用变量绑定后返回最终代码, 字符串
-//
-tpl.code();
+## var tpl = thlib.code_template(code, config);
 
-//
-// 发送到线程的 js 代码
-// the javascript code.
-//
-var code = "1+1";
+  创建代码模板, 方便进行 js 代码的组装
+  code 中是 js 脚本, 并且有变量绑定 ${name}
+  name 变量必须在 config 中设置并被 config.name 的值替换
 
-//
-// 子线程可调用库, default_lib 中有很多常用库的导出
-// console 也包含在其中
-//
-var thread_lib = thlib.default_lib;
 
-//
-// 创建线程对象, 返回后线程开始运行
-// create thread and handle
-//
-var handle = thlib.create(code[, 'filename', thread_lib]);
+## tpl.set(bind_name, value);
 
-//
-// 添加监听器, 接收来自线程的数据, 接收到的数据是副本
-// Recive some message, the data *IS COPY* from thread.
-//
-handle.on('[message name]', function(data) {
-  // TODO
-});
+  设置绑定变量的值
 
-//
-// 当主线程收到这个消息说明子线程已经挂起
-// 如果调用 wait 时提供了事件名, 则发送对应的消息
-// _wait_event_name 默认使用 '_thread_locked' 消息
-//
-handle.on(_wait_event_name, function(_wait_event_data) {
-  //
-  // 必须在接受到 _thread_locked 之后再合适的时候唤醒子线程, 否则子线程将无尽的等待
-  // notify 的参数是唤醒数据, 将被子线程 wait 方法返回, 一旦成功该方法返回 true
-  //
-  handle.notify({some-wakeup-data});
-});
 
-//
-// 删除指定的监听器
-// remove message listener
-//
-handle.off('[message name]', Function);
+## tpl.code();
 
-//
-// 向线程发送消息/数据, 线程接收到的数据是 data 的副本
-// Send message, the data *COPY TO* thread.
-//
-handle.send('[message name]', data);
+  将代码模板使用变量绑定后返回最终代码, 字符串
 
-//
-// 停止线程
-// Thread will STOP
-//
-handle.stop();
 
-//
-// 返回上一次执行脚本花费的时间, 毫秒
-// 如果线程正在执行, 会返回当前脚本花费时间
-// 当一个线程长时间执行死循环, 这个时间会无限延长
-//
-handle.use_time();
-```
+## var code = "1+1";
+
+  发送到线程的 js 代码
+  the javascript code.
+
+
+## var thread_lib = thlib.default_lib;
+
+  子线程可调用库, default_lib 中有很多常用库的导出, console 也包含在其中
+
+
+## var handle = thlib.create(code[, 'filename', thread_lib]);
+
+  创建线程对象, 返回后线程开始运行, 如果 code=null 则读取文件并运行
+  create thread and handle
+
+
+## var handle = thlib.create_node(code[, 'filename', thread_lib]);
+
+  进入 node 模式, 和主线程中一样使用 node 库.
+  node 模式中, node 全局对象优先级更高, 这将覆盖 thread_lib 中导出的对象.
+
+
+## handle.on('[message name]', function(data) { });
+
+  添加监听器, 接收来自线程的数据, 接收到的数据是副本
+  Recive some message, the data *IS COPY* from thread.
+
+
+## handle.notify({some-wakeup-data});
+
+  必须在接受到 wait 事件之后在合适的时候唤醒子线程, 否则子线程将无尽的等待
+  notify 的参数是唤醒数据, 将被子线程 wait 方法返回, 一旦成功该方法返回 true.
+
+
+## handle.off('[message name]', Function);
+
+  删除指定的监听器
+  remove message listener
+
+
+## handle.offall();
+
+  删除所有监听器, 这会让没有任务的进程退出.
+
+
+## typeid = handle.reg_constructor(fn, tyoename);
+
+  注册对象构建器, 为了在主线程/线程之间传递对象, 需要在两边注册对象构建器;
+  否则默认只能传递 JSON 对象.
+
+
+## handle.send('[message name]', data, typenameorid);
+
+  向线程发送消息/数据, 线程接收到的数据是 data 的副本
+  Send message, the data *COPY TO* thread.
+
+
+## handle.stop();
+
+  停止线程
+  Thread will STOP
+
+
+## handle.use_time();
+
+  返回上一次执行脚本花费的时间, 毫秒
+  如果线程正在执行, 会返回当前脚本花费时间
+  当一个线程长时间执行死循环, 这个时间会无限延长
 
 
 子线程中可用的 api / The Script of Thread
 ========================================
 
+
+## thread.on('message-name', function(data) {});
+## thread.once(...);
+
+  接收来自主线程的数据, `thread` 是全局对象.
+  recive message from Main Node Engine
+
+
+## typeid = thread.reg_constructor(fn, tyoename);
+
+  注册对象构建器
+
+
+## thread.send('message-name', data, typenameorid);
+
+  向主线程发送数据
+  send message to Main Node Engine
+
+
+## thread.off('message-name', Function);
+
+  删除指定的监听器
+  remove message listener
+
+
+## thread.offall();
+
+  删除所有监听器, 这可能导致线程结束
+
+
+## thread.wait(_wait_event_name_, _wait_event_data_);
+
+  挂起子线程, 直到被唤醒才返回, 如果主线程调用 notify() 设置了唤醒数据则返回该数据,
+  否则返回 true; 如果返回了 false 说明 wait 方法挂起失败.
+
+  _wait_event_name_ -- 发送一个事件到主线程, 默认 `_thread_locked`
+  _wait_event_data_ -- 事件接收器收到的数据
+
+
+## thread.create_context();
+
+  创建一个上下文对象用于执行 eval()
+
+
+## thread.eval(code, filename, offset, context);
+
+  运行一段代码并返回, 如果未提供 context 参数 this 为 thread 上下文.
+
+
+## new EventEmitter();
+
+  事件, 与 nodejs 定义相同; 不支持 error 事件的抛出;
+  没有 newListener/removeListener;
+
+
+## 其他全局对象
+
+  Math, Number, String, parseInt, parseFloat, Array,
+  Boolean, Date, RegExp, Function, Error,
+  setTimeout, setInterval, setImmediate, clearTimeout,
+  clearInterval, clearImmediate,
+  Int8Array, Uint8Array, Uint8ClampedArray, Int16Array,
+  Uint16Array, Int32Array, Uint32Array, Float32Array,
+  Float64Array, Int8Array,
+
+
+## node 模式全局对象
+
+  require, module, exports, console, global,
+  `__dirname`, `__filename`, 等.
+
+
+DEMO
+====
+
+## 启动轻量线程并运行一段程序
+
 ```js
-//
-// 接收来自主线程的数据, `thread` 是全局对象.
-// recive message from Main Node Engine
-//
-thread.on('message-name', function(data) {});
-thread.once(...);
+var thlib = require('threadjs-lib');
+var code = function fi() {
+  var a=0, b=1, c=1;
+  for (var i=0; i<100; ++i) {
+    console.log(i, '\t', c);
+    c = a + b;
+    a = b;
+    b = c;
+  }
+}.toString() + '; fi();';
 
-//
-// 向主线程发送数据
-// send message to Main Node Engine
-//
-thread.send('message-name', data);
-
-//
-// 删除指定的监听器
-// remove message listener
-//
-thread.off('message-name', Function);
-
-//
-// 删除所有监听器, 这可能导致线程结束
-//
-thread.offall();
-
-//
-// 挂起子线程, 直到被唤醒才返回, 如果 notify 设置了唤醒数据则返回数据
-// 否则返回 true; 如果返回了 false 说明 wait 方法挂起失败.
-// _wait_event_name -- 发送一个事件到主线程, 默认 `_thread_locked`
-// _wait_event_data -- 事件接收器收到的数据
-//
-thread.wait(_wait_event_name, _wait_event_data);
-
-//
-// 创建一个上下文对象用于执行 eval()
-//
-thread.create_context();
-
-//
-// 运行一段代码并返回, 如果未提供 context 参数 this 为 thread 上下文.
-//
-thread.eval(code, filename, offset, context);
-
-//
-// 返回 nodejs 模块, 这个模块必须是 c++ 实现的内置类型.
-// 如果模块无效或被过滤器拦截, 会抛出异常.
-// (*1*)
-//
-thread.binding(native_module_name, binding_target);
-
-//
-// 当调用 binding 时, 首先会使用 filter_fn 过滤模块名,
-// 可以在 filter_fn 中抛出异常或返回 true 来阻止模块被加载
-//
-thread.add_bind_filter(filter_fn)
-thread.remove_bind_filter(filter_fn)
-
-function filter_fn(native_module_name) {}
-
-//
-// 事件, 与 nodejs 定义相同
-//
-new EventEmitter();
-
-//
-// 其他全局对象
-//
-Math, Number, String, parseInt, parseFloat, Array,
-Boolean, Date, RegExp, Function, Error,
-setTimeout, setInterval, setImmediate, clearTimeout,
-clearInterval, clearImmediate,
-Int8Array, Uint8Array, Uint8ClampedArray, Int16Array,
-Uint16Array, Int32Array, Uint32Array, Float32Array,
-Float64Array, Int8Array,
+var handle = thlib.create(code, 'test', thlib.default_lib);
+handle.on('end', function() {
+  console.log('thread exited');
+});
 ```
 
+
+## 启动 node 线程运行一段程序
+
+```js
+var thlib = require('threadjs-lib');
+var code = function _node() {
+  console.log(process.versions);
+}.toString() + '; _node();';
+
+var handle = thlib.create_node(code, 'node');
+handle.on('end', function() {
+  console.log('thread exited');
+});
+
+```
 
 事件 / Predefined Event
 =======================
@@ -230,7 +264,7 @@ Float64Array, Int8Array,
 与远程过程调用相似.
 
 
-### 主线程代码
+## 主线程代码
 
 ```js
 //
@@ -269,10 +303,11 @@ function _fn(args, next, unbind) {
 //
 // 创建线程时, 将扩展库对象传入
 //
-thlib.create(code[, 'filename', thread_lib]);
+thlib.create(code, 'filename', thread_lib);
 ```
 
-### 子线程代码
+
+## 子线程代码
 
 ```js
 //
@@ -280,7 +315,7 @@ thlib.create(code[, 'filename', thread_lib]);
 // 当需要回调函数时, 最后一个参数是回调函数
 //
 thread.namespace.getNextId('print current year chart', function(err, ret) {
-  // TODO when main thread function was return.
+  // TODO call when main thread function was return.
 })
 ```
 
@@ -292,3 +327,4 @@ threadjs    nodejs     v8
 ----------  ---------  --------------
 0.1.x       0.12.9     3.28.71.19
 0.1.x       6.9.1      5.1.281.84
+0.1.x       6.10.3     5.1.281.101

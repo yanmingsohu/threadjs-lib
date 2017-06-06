@@ -26,6 +26,7 @@ static void recv_tick_event(uv_async_t* handle) {
 TimerPool::TimerPool(uv_loop_t *l) : id(1), loop(l) {
   tick_event.data = this;
   uv_async_init(loop, &tick_event, recv_tick_event);
+  uv_unref(_TO_(&tick_event));
 }
 
 
@@ -60,6 +61,7 @@ Timer* TimerPool::pop(tp_key key) {
 
 void TimerPool::push_tick(timer_id id) {
   tick_queue.push_back(id);
+  uv_ref(_TO_(&tick_event));
   uv_async_send(&tick_event);
 }
 
@@ -76,6 +78,7 @@ void TimerPool::do_tick() {
       delete t;
     }
   }
+  uv_unref(_TO_(&tick_event));
 }
 
 

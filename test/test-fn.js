@@ -19,9 +19,35 @@ it('no events then stop thread, and send while error.',
 it('when remove all listener, stopd',
   testOffEvent);
 
+it ('remove all listenr, but has timeout',
+  testoffAndTimeout);
+
 it('remove some listener not all, always running, wait:'+ wait_time +'ms',
   testOffEvent2);
 
+
+function testoffAndTimeout(done) {
+  var th = thlib.create(code2, fname, thlib.default_lib);
+  var to = false;
+
+  th.on('end', function() {
+    if (to) {
+      done();
+    } else {
+      done(new Error('timeout not recv'));
+    }
+  });
+
+  th.on('error', function(e) {
+    done(e);
+  });
+
+  th.on('timeout', function() {
+    to = true;
+  });
+
+  th.send('remove_all_but_timeout', '!');
+}
 
 
 function testStopThread(done) {

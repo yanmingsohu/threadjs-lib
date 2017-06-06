@@ -126,24 +126,29 @@ struct RecvEventData;
 }
 
 
+#define SEND_V8_ERR_EVENT(iso, target, jtry, error_type) \
+  Local<Message> msg = jtry.Message(); \
+  String::Utf8Value exception(jtry.Exception()); \
+  String::Utf8Value line(msg->GetSourceLine()); \
+  String::Utf8Value stack(jtry.StackTrace()); \
+  Json jroot; \
+  jroot.set("name", "error"); \
+  Json jdata = jroot.childen("data"); \
+  jdata.set("name",      error_type); \
+  jdata.set("message",   *exception); \
+  jdata.setMultLine("stack", *stack); \
+  jdata.set("linenum",   msg->GetLineNumber()); \
+  jdata.set("columnnum", msg->GetStartColumn()); \
+  jdata.set("jscode",    *line); \
+  jdata.end(); \
+  jroot.end(); \
+  RecvEventData::sendEvent(target, jroot); \
+
+
 #define CACHE_V8_ERR_SEND_EVNET(iso, target, jtry, error_type) \
   if (jtry.HasCaught()) { \
-    Local<Message> msg = jtry.Message(); \
-    String::Utf8Value exception(jtry.Exception()); \
-    String::Utf8Value line(msg->GetSourceLine()); \
-    String::Utf8Value stack(jtry.StackTrace()); \
-    Json jroot; \
-    jroot.set("name", "error"); \
-    Json jdata = jroot.childen("data"); \
-    jdata.set("name",      error_type); \
-    jdata.set("message",   *exception); \
-    jdata.setMultLine("stack", *stack); \
-    jdata.set("linenum",   msg->GetLineNumber()); \
-    jdata.set("columnnum", msg->GetStartColumn()); \
-    jdata.set("jscode",    *line); \
-    jdata.end(); \
-    jroot.end(); \
-    RecvEventData::sendEvent(target, jroot); \
+    SEND_V8_ERR_EVENT(iso, target, jtry, error_type) \
+    return; \
   }
 
 
@@ -246,6 +251,11 @@ void when_handle_closed_cb(uv_handle_t* handle);
 void donothing_closed_cb(uv_handle_t* handle);
 
 
+inline uv_handle_t* _TO_(uv_async_t* handle) {
+  return reinterpret_cast<uv_handle_t*>(handle);
+}
+
+
 //
 // 必须按照 JSON 的生成顺序调用 api, 否则会生成无效的 JSON
 // 不要设置参数中有双引号 `"` 的字符串
@@ -338,7 +348,7 @@ template<class T, void (*DEL)(T*) = _only_delete<T> >
 class LocalPoint {
   T *point;
 public:
-  LocalPoint(T *p) : point(p) {}
+  LocalPoint(T *p = 0) : point(p) {}
   ~LocalPoint() {
     if (point) {
       DEL(point);
@@ -350,6 +360,12 @@ public:
   }
   T* get() {
     return point;
+  }
+  void reset(T *p) {
+    if (point) {
+      DEL(point);
+    }
+    point = p;
   }
 private:
   LocalPoint(LocalPoint &a);

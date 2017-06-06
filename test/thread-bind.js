@@ -1,8 +1,10 @@
 try { it; return; } catch(e) {}
 
+var binding = thread.createFilter(process.binding);
+
 
 thread.on('add_filter', function(fname) {
-  thread.add_bind_filter(function(name) {
+  binding.add_filter(function(name) {
     // console.log('### filter :', name)
     return name == fname;
   });
@@ -15,7 +17,7 @@ thread.on('bind_mod', function(name) {
   var ret = {};
   try {
     var r = {};
-    var o = thread.binding(name);
+    var o = binding(name);
     for (var n in o) {
       r[n] = typeof o[n];
     }

@@ -14,7 +14,12 @@
       ],
       'cflags'		: ['-fexceptions'],
       'cflags_cc'	: ['-fexceptions', '-std=c++11'],
-      'win_delay_load_hook': 'false'
+      'win_delay_load_hook': 'false',
+      'conditions': [
+        ['OS=="win"', {
+            'cflags' : ['/source-charset:utf-8'],
+        }]
+      ]
     }
   ]
 }

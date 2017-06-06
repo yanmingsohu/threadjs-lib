@@ -7,13 +7,12 @@ var assert    = require('assert');
 
 
 var fname = __dirname + '/thread-bind.js';
-var code = fs.readFileSync(fname, 'utf8');
 var skip_module = {
   'natives':1, 'constants':1,
 };
 
 
-var th = thlib.create(code, fname, thlib.default_lib);
+var th = thlib.create_node(null, fname, thlib.default_lib);
 
 
 process.moduleLoadList.forEach(function(name) {
@@ -56,6 +55,19 @@ it('deter! nv module', function(done) {
 });
 
 
+var e2 = deferred();
+th.on('error', function(e) {
+  e2.reject(e);
+});
+th.on('end', function() {
+  e2.resolve();
+});
+it('thread closed', function(done) {
+  e2.promise(done, done);
+  th.send('over');
+});
+
+
 function testBindModule(modn, done) {
   th.once('mod-' + modn, function(ret) {
     if (ret.data) {
@@ -86,17 +98,5 @@ function getNativeModInfo(mn) {
   return info;
 }
 
-
-var e2 = deferred();
-th.on('error', function(e) {
-  e2.reject(e);
-});
-th.on('end', function() {
-  e2.resolve();
-});
-it('thread closed', function(done) {
-  e2.promise(done, done);
-  th.send('over');
-});
 
 });

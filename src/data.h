@@ -190,6 +190,7 @@ struct ReqData {
   T_ID            thread_id;
   ID_container    &pool_ref;
   bool            terminated;
+  char*           boot_node_file;
 
   uint64_t        begin_time;
   uint64_t        end_time;
@@ -202,7 +203,7 @@ struct ReqData {
     sub_iso(0)     , sub_loop(0)     , sub_event(0)   , running(true) ,
     code(0)        , l_code(0)       , filename(0)    , l_filename(0) ,
     thread_id(0)   , pool_ref(pool)  , terminated(0)  , begin_time(0) ,
-    end_time(0)
+    end_time(0)    , boot_node_file(0)
   {
     init();
   }

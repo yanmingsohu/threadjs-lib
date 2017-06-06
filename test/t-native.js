@@ -10,41 +10,17 @@ var fname     = __dirname + '/thread-native.js';
 var code      = fs.readFileSync(fname, 'utf8');
 
 
-var th = thlib.create(code, fname, thlib.default_lib);
+var th = thlib.create_node(code, fname);
 var SKIP = function() { return true };
-var ready = false;
+var ready = true;
 
 
-th.on('init_process', function() {
-  var init_data = {
-    constants : process.binding("constants"),
-    natives   : process.binding("natives"),
-    attrs     : {
-      arch      : process.arch,
-      platform  : process.platform,
-      env       : process.env,
-      execPath  : process.execPath,
-      versions  : process.versions,
-      release   : process.release,
-      execArgv  : process.execArgv,
-      _cwd      : process.cwd(),
-    },
-  };
-  th.notify(init_data);
-});
-
-
+//
+// not use !
+//
 var srcbase = 'D:/Nodejs_Projects/node/lib/'
 th.on('_require_file_', function(name) {
   var code;
-  // DEBUG !
-  if (name === '_http_server') {
-    try {
-      code = fs.readFileSync(srcbase + name + '.js', 'utf8');
-    } catch(e) {
-      console.log('_require', e);
-    }
-  }
   if (!code) {
     code = process.binding("natives")[name];
   }
@@ -150,30 +126,20 @@ function connect_config(debug, len) {
   };
 }
 
-
-//==========================================================================
-
-
-var result = deferred();
 th.on('error', function(e) {
-  // console.log(e);
-  result.reject(e);
+  console.log(e);
 });
-th.on('ready', function() {
-  ready = true;
-  result.resolve();
-});
-it('ready', function(done) {
-  result.promise(done, done);
-});
+//==========================================================================
 
 
 describe.skip('Task Queue', function() {
   eval_code('time, tick, promise', 0, function(_, cb) {
     var queue = [];
+    var len = 11-3;
     setImmediate(function(){ push("1 Immediate") });
     setTimeout(function(){ push("2 time"); }, 0);
     setImmediate(function(){ push("B Immediate") });
+    len = 11;
 
     new Promise(function(resolve){
       push(3);
@@ -187,10 +153,11 @@ describe.skip('Task Queue', function() {
     process.nextTick(function(){ push('A next-tick'); });
     push(8);
 
+
     function push(i) {
       queue.push(i);
       console.log('#', queue.length, '\t>', i);
-      if (queue.length == 11) {
+      if (queue.length == len) {
         cb(null, queue);
       }
     }
@@ -251,11 +218,11 @@ describe('buffer', function() {
 
 
 describe('dns', function() {
-  var host = 'google.com';
+  var host = 'time.nist.gov';
   var dns = require('dns');
   var ip = {};
   // 同一个 ip 有多个 host 会让测试失败.
-  this.retries(2);
+  // this.timeout(20e3);
 
   dns.resolve(host, function(err, _ip) {
     ip.ip = _ip[0];
@@ -269,7 +236,7 @@ describe('dns', function() {
     });
   });
 
-  eval_code('resolve()', ip, function(ip, cb) {
+  eval_code('reverse()', ip, function(ip, cb) {
     var dns = require('dns');
     dns.reverse(ip.ip, cb);
   });
@@ -313,6 +280,9 @@ describe('crypto', function() {
     });
     cipher.on('end', () => {
       cb(null, encrypted.join(''));
+    });
+    cipher.on('error', function(e) {
+      cb(e);
     });
     cipher.write('some clear text data');
     cipher.end();
@@ -379,9 +349,15 @@ describe('util', function() {
   eval_code('deprecate()', 0, function(_, cb) {
     const util = require('util');
     var puts_call = 0, warn_call = 0;
+    var msg;
+    try {
+      msg = 'in thread ' + thread.threadId;
+    } catch(e) {
+      msg = 'in main';
+    }
     var puts = util.deprecate(function() {
       ++puts_call;
-    }, '函数调用时的警告, 每线程打印一次');
+    }, msg + ', pid:' + process.pid);
     puts(1,2,3);
     puts(1,2,3);
 
@@ -389,8 +365,7 @@ describe('util', function() {
       ++warn_call;
       if (puts_call != 2 && warn_call != 1)
         return cb(new Error('bad'));
-
-      cb(null, e.message);
+      cb(null, e.name);
     });
   });
 });
@@ -444,6 +419,7 @@ describe('child_process', function() {
   eval_code('fork()', file, function(file, cb) {
     const assert = require('assert');
     const fork = require('child_process').fork;
+
     var child = fork(file);
     child.send({ main_pid: process.pid });
 
@@ -461,18 +437,20 @@ describe('child_process', function() {
 
 
 describe('dgram', function() {
-
   //
   // bug: 不启动定时器, 主线程的 client.send 会无法发送数据
   // mocha 的问题? threadjs 的问题?
   //
   var tid;
   it("start interval for Client [BUG]", function() {
-    tid = setTimeout(function() {}, 100);
+    if (!ready) this.skip();
+    tid = setInterval(function() {}, 100);
   });
 
 
   it('thread create client', function(done) {
+    if (!ready) this.skip();
+
     var d = connect_config();
     server(d, function(err, ret) {
       if (err) return done(err);
@@ -491,6 +469,8 @@ describe('dgram', function() {
 
 
   it('thread create server', function(done) {
+    if (!ready) this.skip();
+
     var d = connect_config();
     th.once('udpserverbind', function() {
       d.debug && console.log('2. start client');
@@ -507,6 +487,7 @@ describe('dgram', function() {
 
 
   it('clear interval', function() {
+    if (!ready) this.skip();
     clearInterval(tid);
   });
 
@@ -514,7 +495,10 @@ describe('dgram', function() {
   function server(d, cb) {
     const dgram = require('dgram');
     const Buffer = require('buffer').Buffer;
-    const server = dgram.createSocket('udp4');
+    const server = dgram.createSocket({
+      type : 'udp4',
+      reuseAddr : false,
+    });
     server.on('error', (err) => {
       cb(err);
       server.close();
@@ -551,8 +535,9 @@ describe('dgram', function() {
 
 
 describe('net', function() {
-
   it("thread create Server", function(done) {
+    if (!ready) this.skip();
+
     var d = connect_config();
     th.once('tcpserverbind', function() {
       d.debug && console.log('Main: start client');
@@ -572,6 +557,7 @@ describe('net', function() {
 
 
   it('thread start Client', function(done) {
+    if (!ready) this.skip();
     var d = connect_config();
     server(d, function(err, ret) {
       if (err) return done(err);
@@ -629,18 +615,19 @@ describe('net', function() {
 });
 
 
-describe.skip('http', function() {
+describe('http', function() {
   var tid;
-  it("start interval for Client", function() {
-    tid = setTimeout(function() {
+  it("start interval for Client [BUG]", function() {
+    tid = setInterval(function() {
       // console.log('#HTTP.1');
       // th.send('interval');
-    }, 1000);
+    }, 100);
   });
 
 
-  it.skip('code work in main', function(done) {
-    var d = connect_config(true);
+  it('code work in main', function(done) {
+    if (!ready) this.skip();
+    var d = connect_config();
     var r1;
     server(d, function(e, _r1) {
       if (e) return done(e);
@@ -661,30 +648,40 @@ describe.skip('http', function() {
   //
   // bug: 这个测试让进程崩溃
   //
-  it.skip('thread start Client', function(done) {
-    var d = connect_config(true);
+  it('thread start Client', function(done) {
+    if (!ready) this.skip();
+    var d = connect_config();
     server(d, function(err) {
       if (err) done(err);
     });
     only_eval(client, d, function(err, ret) {
       if (err) return done(err);
       assert.deepEqual(ret, d.msg);
+      done();
     });
   });
 
 
   // this.timeout(60e3);
   it("thread start Server", function(done) {
-    var d = connect_config(true);
+    if (!ready) this.skip();
+    var d = connect_config();
     th.once('http-serverbind', function() {
       client(d, function(e, ret) {
         if (e) return done(e);
-        assert(ret, d.msg);
+        assert.deepEqual(ret, d.msg);
+        done();
       });
     });
     only_eval(server, d, function(err, ret) {
       if (err) return done(err);
     });
+  });
+
+
+  it('clear interval', function() {
+    if (!ready) this.skip();
+    clearInterval(tid);
   });
 
 
@@ -760,6 +757,30 @@ describe.skip('http', function() {
       } catch(e) {}
     });
   }
+});
+
+
+describe('LAST: process Events in Thread', function() {
+  it('on "beforeExit"', function(done) {
+    th.on('beforeExit', done);
+    th.send('over');
+  });
+
+  var exit0 = deferred();
+  th.on('exit0', function() {
+    exit0.resolve();
+  });
+  it('on "exit"', function(done) {
+    exit0.promise(done, done);
+  });
+
+  var end = deferred();
+  th.on('end', function() {
+    end.resolve();
+  });
+  it('thread exit', function(done) {
+    end.promise(done, done);
+  });
 });
 
 

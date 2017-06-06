@@ -50,13 +50,18 @@ private:
 
 public:
   TimerPool(uv_loop_t *);
-
+  //
   // 池中所有的对象都被内存回收
+  //
   ~TimerPool();
 
+  //
   // 返回的对象已经存入池中由池管理内存
+  //
   Timer* createTimer(TimerCall &cb);
+  //
   // 返回 0 或 Timer 指针, 弹出的对象不再被内存管理
+  //
   Timer* pop(timer_id key);
 
   void push_tick(timer_id id);

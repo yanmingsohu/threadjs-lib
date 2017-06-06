@@ -1,3 +1,7 @@
+//
+// 该脚本在构建本机模块时, 可以使用自定义的 node 工程
+// 设置 package.json > "scripts" > "install": "node build.js"
+//
 var cp = require('child_process');
 var fs = require('fs');
 

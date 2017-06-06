@@ -44,9 +44,14 @@ static inline Local<Script> compilerCode(ReqData *data) {
   ScriptCompiler::Source source(code, origin);
 
   TryCatch jtry;
+  Local<Script> script;
   Local<UnboundScript> unbound = ScriptCompiler::CompileUnbound(data->sub_iso, &source);
-  CACHE_V8_ERR_SEND_EVNET(data->sub_iso, data->main_event, jtry, "CompilerError");
-  Local<Script> script = unbound->BindToCurrentContext();
+  if (jtry.HasCaught()) {
+    SEND_V8_ERR_EVENT(data->sub_iso, data->main_event, jtry, "CompilerError");
+    throw 2;
+  } else {
+    script = unbound->BindToCurrentContext();
+  }
   return script;
 }
 
@@ -105,47 +110,6 @@ void j_create_context(const FunctionCallbackInfo<Value>& args) {
     context->SetSecurityToken(curr->GetSecurityToken());
     Local<Object> global = context->Global();
     args.GetReturnValue().Set( global );
-  }
-}
-
-
-//
-// 将 nodejs native 实现绑定到对象上
-// args[0] -- Object 要绑定的对象.
-// args[1] -- native 模块的模块名
-//
-void j_binding(const FunctionCallbackInfo<Value>& args) {
-  RET_OBJ_FUNCTION_INIT(iso, args, thiz) {
-#ifdef MODULE_FUNCTIONS_EXPORTED
-    if (!args[0]->IsObject()) {
-      THROW_EXP(iso, "error: arg[0] is binding target [Object]");
-      return;
-    }
-
-    if (!args[1]->IsString()) {
-      THROW_EXP(iso, "error: arg[1] is module name [String]");
-      return;
-    }
-
-    Local<Context> context = iso->GetCurrentContext();
-    Local<Object> exports = args[0]->ToObject();
-    Nan::Utf8String module_name(args[1]);
-    node_module const* mod = get_builtin_module(*module_name);
-
-    if (mod != nullptr) {
-      if (mod->nm_context_register_func == nullptr) {
-        THROW_EXP(iso, "error: module cannot init");
-        return;
-      }
-      Local<Value> unused = Nan::Undefined();
-      mod->nm_context_register_func(exports, unused, context, mod->nm_priv);
-      args.GetReturnValue().Set(exports);
-    } else {
-      THROW_EXP(iso, "error: module not found");
-    }
-#else
-    THROW_EXP(iso, "error: 'binding' function need modified 'node' app");
-#endif
   }
 }
 
@@ -319,10 +283,11 @@ static uv_async_t* create_uv_async(
 
 
 static void do_script(void *arg) {
-  LocalPoint<ReqData>   data((ReqData *)arg);
-  uv_async_t            *main_event = data->main_event;
-  int                   code = 0;
-  bool                  more;
+  LocalPoint<ReqData> data((ReqData *)arg);
+  uv_async_t          *main_event = data->main_event;
+  int                 code = 0;
+  int                 more;
+  bool                noListener;
 
   try {
     CREATE_ISOLATE(isolate);
@@ -351,11 +316,17 @@ static void do_script(void *arg) {
     uv_loop_init(loop);
     data->sub_loop = loop;
 
-#ifdef MODULE_FUNCTIONS_EXPORTED
-    Environment* node_env = CreateEnvironment(
-        isolate, loop, context, 0, NULL, 0, NULL);
-    LocalPoint<Environment, FreeEnvironment> _del_env(node_env);
-#endif
+    Environment* node_env = NULL;
+    LocalPoint<Environment, FreeEnvironment> _del_env;
+    if (data->boot_node_file) {
+      //
+      // node 使用第二个参数当作文件, 读取并执行
+      //
+      char *argv[] = { "", data->boot_node_file };
+      node_env = CreateEnvironment(isolate, loop, context, 2, argv, 0, NULL);
+      LoadEnvironment(node_env);
+      _del_env.reset(node_env);
+    }
 
     code = 4;
     create_uv_async(isolate, j_context, loop, data->sub_event, "SUB");
@@ -364,9 +335,7 @@ static void do_script(void *arg) {
     set_method(isolate, j_context, "_wait", j_wait, data.get());
     set_method(isolate, j_context, "_eval", j_eval, data.get());
     set_method(isolate, j_context, "_create_context", j_create_context, data.get());
-    set_method(isolate, j_context, "_binding", j_binding, data.get());
     set_method(isolate, j_context, "_runMicrotasks", j_RunMicrotasks, data.get());
-
 
     code = 5;
     LocalPoint<TimerPool> timepool(new TimerPool(loop));
@@ -383,19 +352,34 @@ static void do_script(void *arg) {
     code = 7;
     if (!CALL_JS_OBJ_FN_RET_BOOL(isolate, j_context, "noListener")) {
       code = 8;
+      SealHandleScope seal(isolate);
+
       while (data->running) {
         ReqData::TimeHandle th(data);
 
-        more = uv_run(data->sub_loop, UV_RUN_ONCE);
-        
+        more = uv_run(loop, UV_RUN_ONCE);
+
         if (RecvEventData::hasEvent(main_event)) {
           uv_async_send(main_event);
         }
 
-        isolate->RunMicrotasks();
-
-        if (data->terminated) {
+        if (data->terminated)
           break;
+
+        if (node_env) {
+          HandleScope handle_scope(isolate);
+          Local<Value> *argv = 0;
+          auto ret = MakeCallback(isolate, j_context, "noListener", 0, argv);
+          noListener = ret->IsTrue();
+        } else {
+          isolate->RunMicrotasks();
+          noListener = CALL_JS_OBJ_FN_RET_BOOL(isolate, j_context, "noListener");
+        }
+
+        if (noListener) {
+          uv_unref((uv_handle_t*) data->sub_event);
+        } else {
+          uv_ref((uv_handle_t*) data->sub_event);
         }
 
         //
@@ -403,17 +387,23 @@ static void do_script(void *arg) {
         // 此时移除事件是可行的, 在这种情况下, 其他的异步事件如果挂载
         // 了新的监听器, 则让消息与循环重新关联
         //
-        if (CALL_JS_OBJ_FN_RET_BOOL(isolate, j_context, "noListener")) {
-          uv_unref((uv_handle_t*) data->sub_event);
-        } else {
-          uv_ref((uv_handle_t*) data->sub_event);
-          more = 1;
-        }
+        if (noListener) {
+          if (node_env) {
+            EmitBeforeExit(node_env);
+          }
 
-        if (!more) {
-          break;
+          more = uv_run(loop, UV_RUN_NOWAIT);
+          if (!more) {
+            break;
+          }
         }
       }
+    }
+
+    if (node_env) {
+      HandleScope handle_scope(isolate);
+      EmitExit(node_env);
+      RunAtExit(node_env);
     }
   } catch(...) {
     std::string msg("Error: cannot create thread");
@@ -450,6 +440,8 @@ static void recv_delete_event(uv_async_t *del_event) {
 
 //
 // 主线程创建线程对象，并返回给脚本，线程会立即启动
+// boot_node_file 是一个引导文件, node 环境将读取该文件来加载线程
+// Function(code, filename, node_env, boot_node_file)
 //
 void j_create(const FunctionCallbackInfo<Value>& args) {
   INIT_ISOLATE_FCI(iso, args);
@@ -462,6 +454,11 @@ void j_create(const FunctionCallbackInfo<Value>& args) {
 
     v8val_to_char(args[0], reqdata->code, reqdata->l_code);
     v8val_to_char(args[1], reqdata->filename, reqdata->l_filename);
+
+    if (args[2]->IsTrue()) {
+      int len = 0;
+      v8val_to_char(args[3], reqdata->boot_node_file, len);
+    }
 
     //
     // 这是返回给 js 的对象, 用于操作底层方法, 将被另一个 jobject 包装
