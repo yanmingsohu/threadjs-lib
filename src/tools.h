@@ -1,7 +1,7 @@
 ﻿#ifndef THREAD_TOOLS_H
 #define THREAD_TOOLS_H
 
-
+#include "check-ver.h"
 #include <node.h>
 #include <v8.h>
 #include <uv.h>
@@ -18,25 +18,20 @@ using namespace std;
 
 struct RecvEventData;
 
+//
+// 调试用, 发布后注释 printf
+//
+#define RUN_STEP(n) \
+  code = n; \
+  // printf("STEP %d %d \n", data->thread_id, n); \
+
 
 #define V8_CHAR(iso, str) \
   String::NewFromUtf8(iso, str)
 
-
-// 删除 uv_async_t 句柄, 且绑定的数据为 RecvEventData
-#define DEL_UV_HANDLE_RECV_EVENT(h) \
-  if (h) { \
-    if (h->data) { \
-      RecvEventData* red = (RecvEventData*) h->data; \
-      delete red; \
-      h->data = 0; \
-    } \
-    uv_close((uv_handle_t*) h, when_handle_closed_cb); \
-    h = 0; \
-  }
-
-
+//
 // 当检查到运行的 v8 代码抛出异常则终止, 需要前置 TryCatch 实例
+//
 #define THROW_WHEN_CAUGHT(_jtry) \
   if (_jtry.HasCaught()) { \
     if (jtry.HasTerminated()) { \
@@ -48,13 +43,14 @@ struct RecvEventData;
     return; \
   }
 
-
+//
 // 只删除 uv_async_t 句柄, 且句柄中 data 为空
+// 删除操作将加入 loop 的任务队列中.
+//
 #define DEL_UV_ASYNC(h) \
-  if (h) { \
-    uv_close((uv_handle_t*) h, when_handle_closed_cb); \
-    h = 0; \
-  }
+  if (h && uv_is_closing((uv_handle_t*) h) == 0) { \
+    uv_close((uv_handle_t*) h, free_when_handle_closed_cb); \
+  } \
 
 
 #define DEL_ARRAY(h) \
@@ -66,11 +62,14 @@ struct RecvEventData;
 
 #define DEL_LOOP(h) \
   if (h) { \
-    uv_stop(h); \
-    uv_loop_close(h); \
-    delete h; \
-    h = 0; \
-  }
+    int ret = uv_loop_close(h); \
+    if (0 == ret) { \
+      delete h; \
+    } else { \
+      printf("Free uv_loop fail, %s(%x), Memory LEAK. %08X%08X\n", \
+          ret == UV_EBUSY ? "is busy": "unknow", ret, ((unsigned long long)h)>>32, h); \
+    } \
+  } \
 
 
 // FCI: FunctionCallbackInfo
@@ -89,6 +88,15 @@ struct RecvEventData;
 #define GET_FCI_EXTERNAL_ATTR(fci, tmp, TYPE, pvar) \
   Local<External> tmp = fci.Data().As<External>(); \
   TYPE *pvar = (TYPE*) tmp->Value() \
+
+//
+// 检查无用
+//
+#define CHECK_REQ_DATA(req) \
+  // if (req->state == ReqData::S_EXIT) { \
+  //   printf("ReqData Point is null !"); \
+  //   exit(1); \
+  // } \
 
 
 #define SET_BOOL_ATTR(iso, obj, attr, val) \
@@ -188,7 +196,7 @@ template<class T>
 void CALL_JS_OBJ_FN_STR1(Isolate* isolate, T& thiz, const char* name, const char* arg1) {
   HandleScope handle_scope(isolate);
   Local<Value> val = thiz->Get(String::NewFromUtf8(isolate, name));
-  CHECK_TYPE(Function, isolate, val, "must function");
+  CHECK_TYPE(Function, isolate, val, name);
   Local<Function> func = val.As<Function>();
   Local<Value> argv[] = { String::NewFromUtf8(isolate, arg1) };
   func->Call(thiz, 1, argv);
@@ -235,6 +243,15 @@ inline void set_method( Isolate* isolate,
 }
 
 
+template <typename Type>
+inline void rm_method(Isolate *isolate, Type& recv, char* name) {
+  HandleScope handle_scope(isolate);
+  Local<String> fn_name = String::NewFromUtf8(isolate, name);
+  // Local<Function> fn = recv->Get(fn_name).As<Function>();
+  recv->Delete(fn_name);
+}
+
+
 template<class T>
 inline Persistent<T>* copy(Isolate* iso, Local<T> src) {
   return new Persistent<T>(iso, src);
@@ -247,8 +264,15 @@ inline Local<T> copy(Isolate *iso, Persistent<T> *src) {
 }
 
 
-void when_handle_closed_cb(uv_handle_t* handle);
-void donothing_closed_cb(uv_handle_t* handle);
+template<class T>
+inline void free_recv_event_from(T*& h) {
+  RecvEventData* red;
+  if (object_container.get(red, h->data)) {
+    delete red;
+    object_container.rm(h->data);
+    h->data = 0;
+  }
+}
 
 
 inline uv_handle_t* _TO_(uv_async_t* handle) {
@@ -335,9 +359,13 @@ public:
 };
 
 
-template<class T>
-void _only_delete(T *p) {
+template<class T> void _only_delete(T *p) {
   delete p;
+};
+
+
+// 仅用于测试, 禁止发布
+template<class T> void _not_delete(T *p) {
 };
 
 
@@ -361,7 +389,7 @@ public:
   T* get() {
     return point;
   }
-  void reset(T *p) {
+  void reset(T *p = 0) {
     if (point) {
       DEL(point);
     }
@@ -493,7 +521,7 @@ private:
   Persistent<Function> fn;
   Persistent<Object>   co;
   Isolate             *iso;
-  uv_async_t          *target;
+  uv_async_t          *target; // 当发生错误想消息队列发送错误对象
 
 public:
   SaveCallFunction(Local<Function> cb, Isolate *i,
@@ -520,6 +548,12 @@ public:
   }
   void call();
 };
+
+
+void free_when_handle_closed_cb(uv_handle_t* handle);
+void donothing_closed_cb(uv_handle_t* handle);
+void free_event_loop_resource(uv_loop_t *&loop);
+char* get_uv_type(uv_handle_t* handle);
 
 
 #endif

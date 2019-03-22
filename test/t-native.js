@@ -153,6 +153,8 @@ describe.skip('Task Queue', function() {
     process.nextTick(function(){ push('A next-tick'); });
     push(8);
 
+    setImmediate(function(){ push("C Immediate") });
+
 
     function push(i) {
       queue.push(i);
@@ -617,7 +619,7 @@ describe('net', function() {
 
 describe('http', function() {
   var tid;
-  it("start interval for Client [BUG]", function() {
+  it.skip("start interval for Client [BUG]", function() {
     tid = setInterval(function() {
       // console.log('#HTTP.1');
       // th.send('interval');
@@ -757,6 +759,18 @@ describe('http', function() {
       } catch(e) {}
     });
   }
+});
+
+
+describe('require extend module', function() {
+  eval_code('require("next-tick")', 1, function(__, cb) {
+    try {
+      require("next-tick");
+      cb(null, 1);
+    } catch(e) {
+      cb(e);
+    }
+  });
 });
 
 

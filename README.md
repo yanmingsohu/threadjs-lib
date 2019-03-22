@@ -3,6 +3,9 @@ Nodejs 多线程 / Nodejs Mulit Thread
 
 `npm install threadjs-lib --save`
 
+该项目没有加入npm公共服务器!
+
+
 * 在主线程/子线程之间进行数据通信
 * 轻量级的 v8 线程 (非 nodejs 线程)
 * 子线程的主动挂起, 用来模拟同步操作
@@ -11,10 +14,13 @@ Nodejs 多线程 / Nodejs Mulit Thread
 * 使用 `npm test` 进行测试, 需要全局安装 `mocha`
 * 可以在子线程中运行 nodejs 导出的本机方法
 
-
 > `npm start` 会启动一个命令行模式的线程
 > 输入 js 代码可以立即在线程中运行查看结果
 
+
+已知 BUG:
+* socket 在子线程中启动后, 主线程 socket 被阻塞.
+* 由于 node Environment::CleanupHandles 方法没有导出, node 线程结束后有内存泄漏.
 
 
 主线程中的 Api / Main thread Usage
@@ -91,15 +97,16 @@ Nodejs 多线程 / Nodejs Mulit Thread
   删除所有监听器, 这会让没有任务的进程退出.
 
 
-## typeid = handle.reg_constructor(fn, tyoename);
+## typeid = handle.reg_constructor(fn, typename);
 
   注册对象构建器, 为了在主线程/线程之间传递对象, 需要在两边注册对象构建器;
   否则默认只能传递 JSON 对象.
 
 
-## handle.send('[message name]', data, typenameorid);
+## handle.send('[message name]', data, typename_or_typeid);
 
-  向线程发送消息/数据, 线程接收到的数据是 data 的副本
+  向线程发送消息/数据, 线程接收到的数据是 data 的副本;  
+  可以通过提供对象构建器名称/id来重新从数据创建对象.
   Send message, the data *COPY TO* thread.
 
 
@@ -127,14 +134,14 @@ Nodejs 多线程 / Nodejs Mulit Thread
   recive message from Main Node Engine
 
 
-## typeid = thread.reg_constructor(fn, tyoename);
+## typeid = thread.reg_constructor(fn, typename);
 
   注册对象构建器
 
 
-## thread.send('message-name', data, typenameorid);
+## thread.send('message-name', data, typename_or_typeid);
 
-  向主线程发送数据
+  向主线程发送数据; 可以通过提供对象构建器名称/id来重新从数据创建对象.
   send message to Main Node Engine
 
 
@@ -151,8 +158,9 @@ Nodejs 多线程 / Nodejs Mulit Thread
 
 ## thread.wait(_wait_event_name_, _wait_event_data_);
 
-  挂起子线程, 直到被唤醒才返回, 如果主线程调用 notify() 设置了唤醒数据则返回该数据,
+  挂起子线程, 直到被唤醒才返回, 如果主线程调用 notify() 设置了唤醒数据则返回该数据,  
   否则返回 true; 如果返回了 false 说明 wait 方法挂起失败.
+  主线程在接受到子线程被挂起, 必须调用 notify() 否则子线程将无限等待.
 
   _wait_event_name_ -- 发送一个事件到主线程, 默认 `_thread_locked`
   _wait_event_data_ -- 事件接收器收到的数据

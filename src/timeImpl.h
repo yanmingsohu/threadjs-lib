@@ -20,7 +20,7 @@ typedef SaveCallFunction TimerCall;
 class Timer {
 private:
   TimerCall  fn;
-  uv_timer_t handle;
+  uv_timer_t *handle;
   timer_id   _id;
   TimerPool  *pool;
 
@@ -39,14 +39,14 @@ private:
   typedef timer_id tp_key;
   typedef Timer*   tp_val;
   typedef std::map<timer_id, tp_val>         tp_map;
-  typedef std::pair<const timer_id, tp_val>  tp_pr;
+  typedef std::pair<const timer_id, tp_val>  tp_pair;
   typedef std::deque<timer_id>               tp_imme;
 
   uv_loop_t   *loop;
   tp_map      pool;
   timer_id    id;
   tp_imme     tick_queue;
-  uv_async_t  tick_event;
+  uv_async_t  *tick_event;
 
 public:
   TimerPool(uv_loop_t *);
@@ -70,7 +70,9 @@ public:
 
 
 void InitTimerFunctions(
-  Isolate *isolate, TimerPool *data, uv_async_t *event_target);
+    Isolate *isolate, TimerPool *tp, uv_async_t *event_target);
+
+void UninstallTimerFunctions(Isolate *isolate, TimerPool *tp);
 
 
 #endif // THREAD_TIMER

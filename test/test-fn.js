@@ -11,22 +11,60 @@ var wait_time = 1000;
 
 
 it('thread stop()',
-  testStopThread);
+function testStopThread(done) {
+  var loopcode = 'thread.on("some", function() {})';
+  var th = thlib.create(loopcode, '.js');
+
+  th.on('error', function(e) {
+    done(new Error(e.message));
+  });
+
+  th.on('end', function() {
+    done();
+  });
+
+  th.stop();
+});
+
 
 it('no events then stop thread, and send while error.',
-  testNullScript);
+function testNullScript(done) {
+  var code  = "return";
+  var th = thlib.create(code, 'do-nothing.js', thlib.default_lib);
+
+  th.on('error', function(e) {
+    if (e.message.indexOf('thread is closed') >= 0) {
+      done();
+    } else {
+      done(new Error(e.message));
+    }
+  });
+
+  th.on('end', function() {
+    th.send("notesend", "!");
+  });
+});
+
 
 it('when remove all listener, stopd',
-  testOffEvent);
+function testOffEvent(done) {
+  var th = thlib.create(code2, fname, thlib.default_lib);
+
+  th.on('end', function() {
+    done();
+  });
+
+  th.on('error', function(e) {
+    done(e);
+  });
+
+  th.send('remove_all', '!');
+});
+
 
 it ('remove all listenr, but has timeout',
-  testoffAndTimeout);
-
-it('remove some listener not all, always running, wait:'+ wait_time +'ms',
-  testOffEvent2);
-
-
 function testoffAndTimeout(done) {
+  this.timeout(2000);
   var th = thlib.create(code2, fname, thlib.default_lib);
   var to = false;
 
@@ -47,58 +85,10 @@ function testoffAndTimeout(done) {
   });
 
   th.send('remove_all_but_timeout', '!');
-}
+});
 
 
-function testStopThread(done) {
-  var loopcode = 'thread.on("some", function() {})';
-  var th = thlib.create(loopcode, '.js');
-
-  th.on('error', function(e) {
-    done(new Error(e.message));
-  });
-
-  th.on('end', function() {
-    done();
-  });
-
-  th.stop();
-}
-
-
-function testNullScript(done) {
-  var code  = "return";
-  var th = thlib.create(code, 'do-nothing.js', thlib.default_lib);
-
-  th.on('error', function(e) {
-    if (e.message.indexOf('thread is closed') >= 0) {
-      done();
-    } else {
-      done(new Error(e.message));
-    }
-  });
-
-  th.on('end', function() {
-    th.send("notesend", "!");
-  });
-}
-
-
-function testOffEvent(done) {
-  var th = thlib.create(code2, fname, thlib.default_lib);
-
-  th.on('end', function() {
-    done();
-  });
-
-  th.on('error', function(e) {
-    done(e);
-  });
-
-  th.send('remove_all', '!');
-}
-
-
+it('remove some listener not all, always running, wait:'+ wait_time +'ms',
 function testOffEvent2(done) {
   var th = thlib.create(code2, fname, thlib.default_lib);
   var success;
@@ -123,6 +113,7 @@ function testOffEvent2(done) {
   });
 
   th.send('remove_some', '!');
-}
+});
+
 
 });

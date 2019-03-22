@@ -1,5 +1,11 @@
 try { it; return; } catch(e) {}
 
+try {
+  var fn = setTimeout;
+} catch(e) {
+  console.log(e.message, e.stack);
+}
+
 
 function remove_all() {
   thread.offall();

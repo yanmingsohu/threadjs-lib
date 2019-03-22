@@ -7,7 +7,8 @@
         "src/data.cc",
         "src/tools.cc",
         "src/timeImpl.cc",
-        "src/main.cc"
+        "src/main.cc",
+        "src/sys-fail.cc"
       ],
       "include_dirs": [
         "<!(node -e \"require('nan')\")"

@@ -7,7 +7,7 @@ var assert    = require('assert');
 
 var fname = __dirname + '/thread-http.js';
 var code  = fs.readFileSync(fname, 'utf8');
-var url   = 'http://www.sogou.com/';
+var url   = 'http://www.wikipedia.org/';
 
 
 var right_body;
@@ -15,7 +15,7 @@ var dlib = thlib.default_lib;
 dlib.http = http_proxy();
 
 
-it('Main http() ' + url, function(done) {
+it('http.get() on main' + url, function(done) {
   var thiz = this;
   dlib.http.get.fn([url, null], function(e, ret) {
     if (e) {
@@ -28,7 +28,7 @@ it('Main http() ' + url, function(done) {
 });
 
 
-it('Thread http()', function(done) {
+it('http.get() on thread', function(done) {
   var th = thlib.create(code, fname, dlib);
   th.send('url', url);
 

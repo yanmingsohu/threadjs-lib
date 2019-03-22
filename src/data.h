@@ -8,17 +8,80 @@
 #include <queue>
 #include <sstream>
 #include <string.h>
+#include <map>
 
 using namespace v8;
 using namespace node;
+
+typedef unsigned long T_ID;
+class ID_container;
+class ObjectMap;
 
 extern const char * DEF_FNAME;
 extern const char * THREAD_STOP_ATTR;
 extern const char * THREAD_ID_ATTR;
 extern const char * USE_JS_CODE_OFF_STR;
+extern ObjectMap object_container;
 
-typedef unsigned long T_ID;
-class ID_container;
+
+class ObjectMap {
+private:
+  typedef int tp_key;
+  typedef void* tp_val;
+  typedef std::map<tp_key, tp_val> tp_map;
+  typedef std::pair<const tp_key, tp_val>  tp_pair;
+
+  tp_map pool;
+  int __object_id;
+  uv_mutex_t& lock;
+
+public:
+  ObjectMap(uv_mutex_t& global_lock)
+      : __object_id(0), lock(global_lock) {
+  }
+
+  // 成功返回 true
+  template<class T>
+  bool get(T*& point, tp_key id) {
+    if (id == 0)
+      return false;
+    LockHandle __id(lock);
+    auto item = pool.find(id);
+    if (item == pool.end())
+      return false;
+    point = (T*) item->second;
+    return true;
+  }
+
+  template<class T>
+  bool get(T*& point, void* id) {
+    return get(point, (tp_key) id);
+  }
+
+  // 成功返回为指针分配的 id
+  template<class T>
+  tp_key put(T* point) {
+    LockHandle __id(lock);
+    if (point == 0) return 0;
+    tp_key id = ++__object_id;
+    pool.insert(tp_pair(id, point));
+    return id;
+  }
+
+  // 删除成功返回 true
+  bool rm(tp_key id) {
+    LockHandle __id(lock);
+    auto item = pool.find(id);
+    if (item == pool.end())
+      return false;
+    pool.erase(item);
+    return true;
+  }
+
+  bool rm(void* id) {
+    return rm((tp_key) id);
+  }
+};
 
 
 struct EventData {
@@ -46,10 +109,22 @@ struct EventData {
     return String::NewFromUtf8(iso, data);
   }
 };
+
 typedef std::queue<EventData> JS_EVENTS;
 
 
 struct RecvEventData {
+private:
+  JS_EVENTS     *not_send;
+  uv_mutex_t    _lock;
+  JS_EVENTS     events;
+
+  void init() {
+    uv_mutex_init(&_lock);
+    not_send = new JS_EVENTS();
+  }
+
+public:
   Isolate             *iso;
   uv_async_t          *peer;
   Persistent<Object>  *main;
@@ -71,10 +146,14 @@ struct RecvEventData {
   }
 
   ~RecvEventData() {
-    // `name, peer, iso,` not delete
+    // [ name, peer, iso, ] donot DELETE!
     delete main;
-    if (not_send) delete not_send;
+    delete not_send;
     uv_mutex_destroy(&_lock);
+    iso  = 0;
+    peer = 0;
+    main = 0;
+    name = 0;
   }
 
   //
@@ -86,16 +165,15 @@ struct RecvEventData {
     if (peer) {
       sendEvent(peer, data);
     } else {
-      if (!not_send) {
-        not_send = new JS_EVENTS();
-      }
       not_send->push(EventData(data));
     }
   }
 
   template<class T>
   static inline void sendEvent(uv_async_t *async, T &data) {
-    RecvEventData* rdata = (RecvEventData*) async->data;
+    RecvEventData* rdata;
+    if (!object_container.get(rdata, async->data))
+      return;
     LockHandle lock(rdata->_lock);
     rdata->events.push(EventData(data));
     uv_async_send(async);
@@ -116,7 +194,9 @@ struct RecvEventData {
 
   void swap_not_send_peer() {
     if (not_send && peer) {
-      RecvEventData* peerdata = (RecvEventData*) peer->data;
+      RecvEventData* peerdata;
+      if (!object_container.get(peerdata, peer->data))
+        return;
       LockHandle lock(peerdata->_lock);
       // peerdata->events.swap(*not_send);
       while (!not_send->empty()) {
@@ -158,16 +238,10 @@ struct RecvEventData {
   }
 
   static inline bool hasEvent(uv_async_t *async) {
-    return ((RecvEventData*) async->data)->hasEvent();
-  }
-
-private:
-  JS_EVENTS     *not_send;
-  uv_mutex_t    _lock;
-  JS_EVENTS     events;
-
-  void init() {
-    uv_mutex_init(&_lock);
+    RecvEventData* recv;
+    if (!object_container.get(recv, async->data))
+      return false;
+    return recv->hasEvent();
   }
 };
 
@@ -196,6 +270,7 @@ struct ReqData {
   uint64_t        end_time;
 
   WaitThread      wait;
+  enum { S_EXIT=0xFC, S_INIT } state;
 
 
   ReqData(Isolate *mi, uv_loop_t *muv, ID_container &pool) :
@@ -203,12 +278,14 @@ struct ReqData {
     sub_iso(0)     , sub_loop(0)     , sub_event(0)   , running(true) ,
     code(0)        , l_code(0)       , filename(0)    , l_filename(0) ,
     thread_id(0)   , pool_ref(pool)  , terminated(0)  , begin_time(0) ,
-    end_time(0)    , boot_node_file(0)
+    end_time(0)    , state(S_INIT)   , boot_node_file(0)
   {
     init();
   }
 
   ~ReqData();
+
+  void free_sub_loop();
 
   void dump() {
     std::cout
