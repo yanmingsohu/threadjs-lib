@@ -3,7 +3,6 @@ Nodejs 多线程 / Nodejs Mulit Thread
 
 `npm install threadjs-lib --save`
 
-该项目没有加入npm公共服务器!
 
 
 * 在主线程/子线程之间进行数据通信
